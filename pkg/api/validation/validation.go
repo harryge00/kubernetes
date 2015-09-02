@@ -343,6 +343,9 @@ func validateVolumes(volumes []api.Volume) (sets.String, errs.ValidationErrorLis
 func validateSource(source *api.VolumeSource) errs.ValidationErrorList {
 	numVolumes := 0
 	allErrs := errs.ValidationErrorList{}
+	if source.AnchnetPersistentDisk != nil {
+		numVolumes++
+	}
 	if source.HostPath != nil {
 		numVolumes++
 		allErrs = append(allErrs, validateHostPathVolumeSource(source.HostPath).Prefix("hostPath")...)
@@ -635,6 +638,9 @@ func ValidatePersistentVolume(pv *api.PersistentVolume) errs.ValidationErrorList
 	}
 
 	numVolumes := 0
+	if pv.Spec.AnchnetPersistentDisk != nil {
+		numVolumes++
+	}
 	if pv.Spec.HostPath != nil {
 		numVolumes++
 		allErrs = append(allErrs, validateHostPathVolumeSource(pv.Spec.HostPath).Prefix("hostPath")...)

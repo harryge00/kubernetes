@@ -43,6 +43,21 @@ func convert_api_AWSElasticBlockStoreVolumeSource_To_v1_AWSElasticBlockStoreVolu
 	return autoconvert_api_AWSElasticBlockStoreVolumeSource_To_v1_AWSElasticBlockStoreVolumeSource(in, out, s)
 }
 
+func autoconvert_api_AnchnetPersistentDiskVolumeSource_To_v1_AnchnetPersistentDiskVolumeSource(in *api.AnchnetPersistentDiskVolumeSource, out *v1.AnchnetPersistentDiskVolumeSource, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*api.AnchnetPersistentDiskVolumeSource))(in)
+	}
+	out.VolumeID = in.VolumeID
+	out.FSType = in.FSType
+	out.Partition = in.Partition
+	out.ReadOnly = in.ReadOnly
+	return nil
+}
+
+func convert_api_AnchnetPersistentDiskVolumeSource_To_v1_AnchnetPersistentDiskVolumeSource(in *api.AnchnetPersistentDiskVolumeSource, out *v1.AnchnetPersistentDiskVolumeSource, s conversion.Scope) error {
+	return autoconvert_api_AnchnetPersistentDiskVolumeSource_To_v1_AnchnetPersistentDiskVolumeSource(in, out, s)
+}
+
 func autoconvert_api_Capabilities_To_v1_Capabilities(in *api.Capabilities, out *v1.Capabilities, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*api.Capabilities))(in)
@@ -940,6 +955,14 @@ func autoconvert_api_VolumeSource_To_v1_VolumeSource(in *api.VolumeSource, out *
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*api.VolumeSource))(in)
 	}
+	if in.AnchnetPersistentDisk != nil {
+		out.AnchnetPersistentDisk = new(v1.AnchnetPersistentDiskVolumeSource)
+		if err := convert_api_AnchnetPersistentDiskVolumeSource_To_v1_AnchnetPersistentDiskVolumeSource(in.AnchnetPersistentDisk, out.AnchnetPersistentDisk, s); err != nil {
+			return err
+		}
+	} else {
+		out.AnchnetPersistentDisk = nil
+	}
 	if in.HostPath != nil {
 		out.HostPath = new(v1.HostPathVolumeSource)
 		if err := convert_api_HostPathVolumeSource_To_v1_HostPathVolumeSource(in.HostPath, out.HostPath, s); err != nil {
@@ -1088,6 +1111,21 @@ func autoconvert_v1_AWSElasticBlockStoreVolumeSource_To_api_AWSElasticBlockStore
 
 func convert_v1_AWSElasticBlockStoreVolumeSource_To_api_AWSElasticBlockStoreVolumeSource(in *v1.AWSElasticBlockStoreVolumeSource, out *api.AWSElasticBlockStoreVolumeSource, s conversion.Scope) error {
 	return autoconvert_v1_AWSElasticBlockStoreVolumeSource_To_api_AWSElasticBlockStoreVolumeSource(in, out, s)
+}
+
+func autoconvert_v1_AnchnetPersistentDiskVolumeSource_To_api_AnchnetPersistentDiskVolumeSource(in *v1.AnchnetPersistentDiskVolumeSource, out *api.AnchnetPersistentDiskVolumeSource, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*v1.AnchnetPersistentDiskVolumeSource))(in)
+	}
+	out.VolumeID = in.VolumeID
+	out.FSType = in.FSType
+	out.Partition = in.Partition
+	out.ReadOnly = in.ReadOnly
+	return nil
+}
+
+func convert_v1_AnchnetPersistentDiskVolumeSource_To_api_AnchnetPersistentDiskVolumeSource(in *v1.AnchnetPersistentDiskVolumeSource, out *api.AnchnetPersistentDiskVolumeSource, s conversion.Scope) error {
+	return autoconvert_v1_AnchnetPersistentDiskVolumeSource_To_api_AnchnetPersistentDiskVolumeSource(in, out, s)
 }
 
 func autoconvert_v1_Capabilities_To_api_Capabilities(in *v1.Capabilities, out *api.Capabilities, s conversion.Scope) error {
@@ -1987,6 +2025,14 @@ func convert_v1_VolumeMount_To_api_VolumeMount(in *v1.VolumeMount, out *api.Volu
 func autoconvert_v1_VolumeSource_To_api_VolumeSource(in *v1.VolumeSource, out *api.VolumeSource, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*v1.VolumeSource))(in)
+	}
+	if in.AnchnetPersistentDisk != nil {
+		out.AnchnetPersistentDisk = new(api.AnchnetPersistentDiskVolumeSource)
+		if err := convert_v1_AnchnetPersistentDiskVolumeSource_To_api_AnchnetPersistentDiskVolumeSource(in.AnchnetPersistentDisk, out.AnchnetPersistentDisk, s); err != nil {
+			return err
+		}
+	} else {
+		out.AnchnetPersistentDisk = nil
 	}
 	if in.HostPath != nil {
 		out.HostPath = new(api.HostPathVolumeSource)
@@ -3920,6 +3966,7 @@ func convert_v1beta1_ThirdPartyResourceList_To_extensions_ThirdPartyResourceList
 func init() {
 	err := api.Scheme.AddGeneratedConversionFuncs(
 		autoconvert_api_AWSElasticBlockStoreVolumeSource_To_v1_AWSElasticBlockStoreVolumeSource,
+		autoconvert_api_AnchnetPersistentDiskVolumeSource_To_v1_AnchnetPersistentDiskVolumeSource,
 		autoconvert_api_Capabilities_To_v1_Capabilities,
 		autoconvert_api_CephFSVolumeSource_To_v1_CephFSVolumeSource,
 		autoconvert_api_CinderVolumeSource_To_v1_CinderVolumeSource,
@@ -4002,6 +4049,7 @@ func init() {
 		autoconvert_extensions_ThirdPartyResourceList_To_v1beta1_ThirdPartyResourceList,
 		autoconvert_extensions_ThirdPartyResource_To_v1beta1_ThirdPartyResource,
 		autoconvert_v1_AWSElasticBlockStoreVolumeSource_To_api_AWSElasticBlockStoreVolumeSource,
+		autoconvert_v1_AnchnetPersistentDiskVolumeSource_To_api_AnchnetPersistentDiskVolumeSource,
 		autoconvert_v1_Capabilities_To_api_Capabilities,
 		autoconvert_v1_CephFSVolumeSource_To_api_CephFSVolumeSource,
 		autoconvert_v1_CinderVolumeSource_To_api_CinderVolumeSource,

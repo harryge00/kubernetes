@@ -37,6 +37,14 @@ func deepCopy_api_AWSElasticBlockStoreVolumeSource(in api.AWSElasticBlockStoreVo
 	return nil
 }
 
+func deepCopy_api_AnchnetPersistentDiskVolumeSource(in api.AnchnetPersistentDiskVolumeSource, out *api.AnchnetPersistentDiskVolumeSource, c *conversion.Cloner) error {
+	out.VolumeID = in.VolumeID
+	out.FSType = in.FSType
+	out.Partition = in.Partition
+	out.ReadOnly = in.ReadOnly
+	return nil
+}
+
 func deepCopy_api_Capabilities(in api.Capabilities, out *api.Capabilities, c *conversion.Cloner) error {
 	if in.Add != nil {
 		out.Add = make([]api.Capability, len(in.Add))
@@ -663,6 +671,14 @@ func deepCopy_api_VolumeMount(in api.VolumeMount, out *api.VolumeMount, c *conve
 }
 
 func deepCopy_api_VolumeSource(in api.VolumeSource, out *api.VolumeSource, c *conversion.Cloner) error {
+	if in.AnchnetPersistentDisk != nil {
+		out.AnchnetPersistentDisk = new(api.AnchnetPersistentDiskVolumeSource)
+		if err := deepCopy_api_AnchnetPersistentDiskVolumeSource(*in.AnchnetPersistentDisk, out.AnchnetPersistentDisk, c); err != nil {
+			return err
+		}
+	} else {
+		out.AnchnetPersistentDisk = nil
+	}
 	if in.HostPath != nil {
 		out.HostPath = new(api.HostPathVolumeSource)
 		if err := deepCopy_api_HostPathVolumeSource(*in.HostPath, out.HostPath, c); err != nil {
@@ -1479,6 +1495,7 @@ func deepCopy_util_IntOrString(in util.IntOrString, out *util.IntOrString, c *co
 func init() {
 	err := api.Scheme.AddGeneratedDeepCopyFuncs(
 		deepCopy_api_AWSElasticBlockStoreVolumeSource,
+		deepCopy_api_AnchnetPersistentDiskVolumeSource,
 		deepCopy_api_Capabilities,
 		deepCopy_api_CephFSVolumeSource,
 		deepCopy_api_CinderVolumeSource,
