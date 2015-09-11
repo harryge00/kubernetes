@@ -1195,6 +1195,16 @@ func convert_api_LocalObjectReference_To_v1_LocalObjectReference(in *api.LocalOb
 	return autoconvert_api_LocalObjectReference_To_v1_LocalObjectReference(in, out, s)
 }
 
+func convert_api_LogDirPolicy_To_v1_LogDirPolicy(in *api.LogDirPolicy, out *LogDirPolicy, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*api.LogDirPolicy))(in)
+	}
+	out.Glob = in.Glob
+	out.Rotate = in.Rotate
+	out.MaxFileSize = in.MaxFileSize
+	return nil
+}
+
 func autoconvert_api_NFSVolumeSource_To_v1_NFSVolumeSource(in *api.NFSVolumeSource, out *NFSVolumeSource, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*api.NFSVolumeSource))(in)
@@ -2909,6 +2919,29 @@ func autoconvert_api_VolumeMount_To_v1_VolumeMount(in *api.VolumeMount, out *Vol
 	out.Name = in.Name
 	out.ReadOnly = in.ReadOnly
 	out.MountPath = in.MountPath
+	if in.Policy != nil {
+		out.Policy = new(VolumeMountPolicy)
+		if err := convert_api_VolumeMountPolicy_To_v1_VolumeMountPolicy(in.Policy, out.Policy, s); err != nil {
+			return err
+		}
+	} else {
+		out.Policy = nil
+	}
+	return nil
+}
+
+func convert_api_VolumeMountPolicy_To_v1_VolumeMountPolicy(in *api.VolumeMountPolicy, out *VolumeMountPolicy, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*api.VolumeMountPolicy))(in)
+	}
+	if in.LogDir != nil {
+		out.LogDir = new(LogDirPolicy)
+		if err := convert_api_LogDirPolicy_To_v1_LogDirPolicy(in.LogDir, out.LogDir, s); err != nil {
+			return err
+		}
+	} else {
+		out.LogDir = nil
+	}
 	return nil
 }
 
@@ -4230,6 +4263,16 @@ func autoconvert_v1_LocalObjectReference_To_api_LocalObjectReference(in *LocalOb
 
 func convert_v1_LocalObjectReference_To_api_LocalObjectReference(in *LocalObjectReference, out *api.LocalObjectReference, s conversion.Scope) error {
 	return autoconvert_v1_LocalObjectReference_To_api_LocalObjectReference(in, out, s)
+}
+
+func convert_v1_LogDirPolicy_To_api_LogDirPolicy(in *LogDirPolicy, out *api.LogDirPolicy, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*LogDirPolicy))(in)
+	}
+	out.Glob = in.Glob
+	out.Rotate = in.Rotate
+	out.MaxFileSize = in.MaxFileSize
+	return nil
 }
 
 func autoconvert_v1_NFSVolumeSource_To_api_NFSVolumeSource(in *NFSVolumeSource, out *api.NFSVolumeSource, s conversion.Scope) error {
@@ -5946,6 +5989,29 @@ func autoconvert_v1_VolumeMount_To_api_VolumeMount(in *VolumeMount, out *api.Vol
 	out.Name = in.Name
 	out.ReadOnly = in.ReadOnly
 	out.MountPath = in.MountPath
+	if in.Policy != nil {
+		out.Policy = new(api.VolumeMountPolicy)
+		if err := convert_v1_VolumeMountPolicy_To_api_VolumeMountPolicy(in.Policy, out.Policy, s); err != nil {
+			return err
+		}
+	} else {
+		out.Policy = nil
+	}
+	return nil
+}
+
+func convert_v1_VolumeMountPolicy_To_api_VolumeMountPolicy(in *VolumeMountPolicy, out *api.VolumeMountPolicy, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*VolumeMountPolicy))(in)
+	}
+	if in.LogDir != nil {
+		out.LogDir = new(api.LogDirPolicy)
+		if err := convert_v1_LogDirPolicy_To_api_LogDirPolicy(in.LogDir, out.LogDir, s); err != nil {
+			return err
+		}
+	} else {
+		out.LogDir = nil
+	}
 	return nil
 }
 
@@ -6340,6 +6406,8 @@ func init() {
 		autoconvert_v1_VolumeMount_To_api_VolumeMount,
 		autoconvert_v1_VolumeSource_To_api_VolumeSource,
 		autoconvert_v1_Volume_To_api_Volume,
+		convert_api_LogDirPolicy_To_v1_LogDirPolicy,
+		convert_v1_LogDirPolicy_To_api_LogDirPolicy,
 	)
 	if err != nil {
 		// If one of the conversion functions is malformed, detect it immediately.

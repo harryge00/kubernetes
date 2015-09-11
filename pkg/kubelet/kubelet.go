@@ -919,6 +919,26 @@ func (kl *Kubelet) syncNodeStatus() {
 	}
 }
 
+func handleVolumeMountPolicy(pod *api.Pod, container *api.Container, mount api.VolumeMount, vol volume.Volume) error {
+	if mount.Policy == nil {
+		return nil
+	}
+
+	if mount.Policy.LogDir != nil {
+		// Create a symbolic link to the volume of logdir using a name which captures the
+		// full pod name and the container name. Cluster level logging can watch these
+		// logdirs to collect the log files.
+		logDirName := fmt.Sprintf("%s_%s", kubecontainer.GetPodFullName(pod), container.Name)
+		logDirPath := path.Join(containerLogsDir, logDirName)
+		if err := os.Symlink(vol.GetPath(), logDirPath); err != nil {
+			glog.Errorf("Failed to create symbolic link to the volume: %v", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
 func makeMounts(pod *api.Pod, podDir string, container *api.Container, podVolumes kubecontainer.VolumeMap) ([]kubecontainer.Mount, error) {
 	// Kubernetes only mounts on /etc/hosts if :
 	// - container does not use hostNetwork and
@@ -935,6 +955,13 @@ func makeMounts(pod *api.Pod, podDir string, container *api.Container, podVolume
 			glog.Warningf("Mount cannot be satisified for container %q, because the volume is missing: %q", container.Name, mount)
 			continue
 		}
+
+		err := handleVolumeMountPolicy(pod, container, mount, vol)
+		if err != nil {
+			glog.Warningf("Failed to handle the volumeMount's policy, %v", err)
+			continue
+		}
+
 		mounts = append(mounts, kubecontainer.Mount{
 			Name:          mount.Name,
 			ContainerPath: mount.MountPath,
