@@ -21,7 +21,7 @@ import (
 	// This should probably be part of some configuration fed into the build for a
 	// given binary target.
 
-	// Cloud providers
+	//Cloud providers
 	_ "k8s.io/kubernetes/pkg/cloudprovider/providers"
 
 	// Volume plugins

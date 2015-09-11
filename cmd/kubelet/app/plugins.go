@@ -42,20 +42,8 @@ import (
 	"k8s.io/kubernetes/pkg/volume/persistent_claim"
 	"k8s.io/kubernetes/pkg/volume/rbd"
 	"k8s.io/kubernetes/pkg/volume/secret"
-<<<<<<< HEAD
 	//Cloud providers
 	_ "k8s.io/kubernetes/pkg/cloudprovider/providers"
-=======
-	// Cloud providers
-	_ "k8s.io/kubernetes/pkg/cloudprovider/anchnet"
-	_ "k8s.io/kubernetes/pkg/cloudprovider/aws"
-	_ "k8s.io/kubernetes/pkg/cloudprovider/gce"
-	_ "k8s.io/kubernetes/pkg/cloudprovider/mesos"
-	_ "k8s.io/kubernetes/pkg/cloudprovider/openstack"
-	_ "k8s.io/kubernetes/pkg/cloudprovider/ovirt"
-	_ "k8s.io/kubernetes/pkg/cloudprovider/rackspace"
-	_ "k8s.io/kubernetes/pkg/cloudprovider/vagrant"
->>>>>>> c765d93... Make ssh robust and fix bug loading plugin
 )
 
 // ProbeVolumePlugins collects all volume plugins into an easy to use list.
