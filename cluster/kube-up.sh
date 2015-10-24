@@ -44,9 +44,6 @@ kube-up
 echo "... calling validate-cluster" >&2
 validate-cluster
 
-echo "... calling deploy-addons" >&2
-type deploy-addons &>/dev/null && deploy-addons
-
 echo -e "Done, listing cluster services:\n" >&2
 "${KUBE_ROOT}/cluster/kubectl.sh" cluster-info
 echo
