@@ -1,12 +1,7 @@
-{% set heapster_memory = "300Mi" -%}
-{% if pillar['num_nodes'] is defined -%}
-  {% set heapster_memory = (200 + pillar['num_nodes'] * 12)|string + "Mi" -%}
-{% endif -%}
-
 apiVersion: v1
 kind: ReplicationController
 metadata:
-  name: heapster-v10
+  name: heapster
   namespace: kube-system
   labels:
     k8s-app: heapster
@@ -25,12 +20,12 @@ spec:
         kubernetes.io/cluster-service: "true"
     spec:
       containers:
-        - image: gcr.io/google_containers/heapster:v0.18.2
+        - image: index.caicloud.io/caicloud/google-heapster:v0.19.0
           name: heapster
           resources:
             limits:
               cpu: 100m
-              memory: {{ heapster_memory }}
+              memory: {{ pillar['heapster_memory'] }}
           command:
             - /heapster
             - --source=kubernetes:''
