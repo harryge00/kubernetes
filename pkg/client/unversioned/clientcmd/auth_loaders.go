@@ -19,6 +19,7 @@ package clientcmd
 import (
 	"encoding/json"
 	"fmt"
+	"golang.org/x/crypto/ssh/terminal"
 	"io"
 	"io/ioutil"
 	"os"
@@ -68,8 +69,7 @@ func (a *PromptingAuthLoader) LoadAuth(path string) (*clientauth.Info, error) {
 func (a *PromptingAuthLoader) Prompt() *clientauth.Info {
 	auth := &clientauth.Info{}
 	auth.User = promptForString("Username", a.reader)
-	auth.Password = promptForString("Password", a.reader)
-
+	auth.Password = promptForPassword("Password", a.reader)
 	return auth
 }
 
@@ -78,6 +78,16 @@ func promptForString(field string, r io.Reader) string {
 	var result string
 	fmt.Fscan(r, &result)
 	return result
+}
+
+func promptForPassword(field string, r io.Reader) string {
+	fmt.Printf("Please enter %s: ", field)
+	var password []byte
+	password, err := terminal.ReadPassword(0)
+	if err != nil {
+		fmt.Println("ReadPassword error:", err)
+	}
+	return string(password)
 }
 
 // NewPromptingAuthLoader is an AuthLoader that parses an AuthInfo object from a file path. It prompts user and creates file if it doesn't exist.
