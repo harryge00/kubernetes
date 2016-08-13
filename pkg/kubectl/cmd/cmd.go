@@ -275,6 +275,7 @@ Find more information at https://github.com/kubernetes/kubernetes.`,
 	cmds.AddCommand(NewCmdCompletion(f, out))
 
 	cmds.AddCommand(NewCmdTop(f, out))
+  cmds.AddCommand(NewCmdOpenUI(f, out))
 
 	if cmds.Flag("namespace") != nil {
 		if cmds.Flag("namespace").Annotations == nil {
