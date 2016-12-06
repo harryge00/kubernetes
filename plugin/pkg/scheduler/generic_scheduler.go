@@ -184,6 +184,7 @@ func findNodesThatFit(
 		meta := metadataProducer(pod, nodeNameToInfo)
 		checkNode := func(i int) {
 			nodeName := nodes[i].Name
+			// Tochange
 			fits, failedPredicates, err := podFitsOnNode(pod, meta, nodeNameToInfo[nodeName], predicateFuncs)
 			if err != nil {
 				predicateResultLock.Lock()
@@ -229,6 +230,7 @@ func findNodesThatFit(
 }
 
 // Checks whether node with a given name and NodeInfo satisfies all predicateFuncs.
+			// Tochange
 func podFitsOnNode(pod *v1.Pod, meta interface{}, info *schedulercache.NodeInfo, predicateFuncs map[string]algorithm.FitPredicate) (bool, []algorithm.PredicateFailureReason, error) {
 	var failedPredicates []algorithm.PredicateFailureReason
 	for _, predicate := range predicateFuncs {

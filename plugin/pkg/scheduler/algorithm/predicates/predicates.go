@@ -97,7 +97,7 @@ type matchingPodAntiAffinityTerm struct {
 	node *v1.Node
 }
 
-type predicateMetadata struct {
+type PredicateMetadata struct {
 	pod                                *v1.Pod
 	podBestEffort                      bool
 	podRequest                         *schedulercache.Resource

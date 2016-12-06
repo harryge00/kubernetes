@@ -132,6 +132,7 @@ func defaultPredicates() sets.String {
 			func(args factory.PluginFactoryArgs) algorithm.FitPredicate {
 				// TODO: allow for generically parameterized scheduler predicates, because this is a bit ugly
 				maxVols := getMaxVols(DefaultMaxGCEPDVolumes)
+				// GOT one
 				return predicates.NewMaxPDVolumeCountPredicate(predicates.GCEPDVolumeFilter, maxVols, args.PVInfo, args.PVCInfo)
 			},
 		),
