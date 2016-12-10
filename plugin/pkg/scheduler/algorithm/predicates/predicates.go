@@ -486,7 +486,7 @@ func podName(pod *v1.Pod) string {
 	return pod.Namespace + "/" + pod.Name
 }
 
-func PodFitsResources(pod *v1.Pod, meta interface{}, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
+func PodFitsResources(pod *v1.Pod, predicateMeta *predicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	node := nodeInfo.Node()
 	if node == nil {
 		return false, nil, fmt.Errorf("node not found")
@@ -499,12 +499,9 @@ func PodFitsResources(pod *v1.Pod, meta interface{}, nodeInfo *schedulercache.No
 	}
 
 	var podRequest *schedulercache.Resource
-	if predicateMeta, ok := meta.(*predicateMetadata); ok {
-		podRequest = predicateMeta.podRequest
-	} else {
+	podRequest = predicateMeta.podRequest
 		// We couldn't parse metadata - fallback to computing it.
-		podRequest = GetResourceRequest(pod)
-	}
+		// podRequest = GetResourceRequest(pod)
 	if podRequest.MilliCPU == 0 && podRequest.Memory == 0 && podRequest.NvidiaGPU == 0 && len(podRequest.OpaqueIntResources) == 0 {
 		return len(predicateFails) == 0, predicateFails, nil
 	}
@@ -769,14 +766,11 @@ func (s *ServiceAffinity) checkServiceAffinity(pod *v1.Pod, meta interface{}, no
 	return false, []algorithm.PredicateFailureReason{ErrServiceAffinityViolated}, nil
 }
 
-func PodFitsHostPorts(pod *v1.Pod, meta interface{}, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
+func PodFitsHostPorts(pod *v1.Pod, predicateMeta *predicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	var wantPorts map[int]bool
-	if predicateMeta, ok := meta.(*predicateMetadata); ok {
-		wantPorts = predicateMeta.podPorts
-	} else {
+	wantPorts = predicateMeta.podPorts
 		// We couldn't parse metadata - fallback to computing it.
-		wantPorts = GetUsedPorts(pod)
-	}
+		// wantPorts = GetUsedPorts(pod)
 	if len(wantPorts) == 0 {
 		return true, nil, nil
 	}
@@ -1048,19 +1042,19 @@ func (c *PodAffinityChecker) getMatchingAntiAffinityTerms(pod *v1.Pod, allPods [
 // rules indicated by the existing pods.
 func (c *PodAffinityChecker) satisfiesExistingPodsAntiAffinity(pod *v1.Pod, meta interface{}, node *v1.Node) bool {
 	var matchingTerms []matchingPodAntiAffinityTerm
-	if predicateMeta, ok := meta.(*predicateMetadata); ok {
+	// if predicateMeta, ok := meta.(*predicateMetadata); ok {
 		matchingTerms = predicateMeta.matchingAntiAffinityTerms
-	} else {
-		allPods, err := c.podLister.List(labels.Everything())
-		if err != nil {
-			glog.V(10).Infof("Failed to get all pods, %+v", err)
-			return false
-		}
-		if matchingTerms, err = c.getMatchingAntiAffinityTerms(pod, allPods); err != nil {
-			glog.V(10).Infof("Failed to get all terms that pod %+v matches, err: %+v", podName(pod), err)
-			return false
-		}
-	}
+	// } else {
+	// 	allPods, err := c.podLister.List(labels.Everything())
+	// 	if err != nil {
+	// 		glog.V(10).Infof("Failed to get all pods, %+v", err)
+	// 		return false
+	// 	}
+	// 	if matchingTerms, err = c.getMatchingAntiAffinityTerms(pod, allPods); err != nil {
+	// 		glog.V(10).Infof("Failed to get all terms that pod %+v matches, err: %+v", podName(pod), err)
+	// 		return false
+	// 	}
+	// }
 	for _, term := range matchingTerms {
 		if c.failureDomains.NodesHaveSameTopologyKey(node, term.node, term.term.TopologyKey) {
 			glog.V(10).Infof("Cannot schedule pod %+v onto node %v,because of PodAntiAffinityTerm %v",
@@ -1181,14 +1175,14 @@ func isPodBestEffort(pod *v1.Pod) bool {
 
 // CheckNodeMemoryPressurePredicate checks if a pod can be scheduled on a node
 // reporting memory pressure condition.
-func CheckNodeMemoryPressurePredicate(pod *v1.Pod, meta interface{}, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
+func CheckNodeMemoryPressurePredicate(pod *v1.Pod, predicateMeta *predicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	var podBestEffort bool
-	if predicateMeta, ok := meta.(*predicateMetadata); ok {
+	// if predicateMeta, ok := meta.(*predicateMetadata); ok {
 		podBestEffort = predicateMeta.podBestEffort
-	} else {
+	// } else {
 		// We couldn't parse metadata - fallback to computing it.
-		podBestEffort = isPodBestEffort(pod)
-	}
+		// podBestEffort = isPodBestEffort(pod)
+	// }
 	// pod is not BestEffort pod
 	if !podBestEffort {
 		return true, nil, nil
