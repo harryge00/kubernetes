@@ -20,13 +20,12 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1"
 	schedulerapi "k8s.io/kubernetes/plugin/pkg/scheduler/api"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/schedulercache"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
 )
 
 // FitPredicate is a function that indicates if a pod fits into an existing node.
 // The failure information is given by the error.
 // TODO: Change interface{} to a specific type.
-type FitPredicate func(pod *v1.Pod, predicateMeta *predicates.PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []PredicateFailureReason, error)
+type FitPredicate func(pod *v1.Pod, predicateMeta *PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []PredicateFailureReason, error)
 
 // PriorityMapFunction is a function that computes per-node results for a given node.
 // TODO: Figure out the exact API of this method.
@@ -65,3 +64,20 @@ type PredicateFailureReason interface {
 }
 
 type GetEquivalencePodFunc func(pod *v1.Pod) interface{}
+
+//  Note that PredicateMetadata and matchingPodAntiAffinityTerm need to be declared in the same file
+//  due to the way declarations are processed in predicate declaration unit tests.
+type MatchingPodAntiAffinityTerm struct {
+	term *v1.PodAffinityTerm
+	node *v1.Node
+}
+
+type PredicateMetadata struct {
+	pod                                *v1.Pod
+	podBestEffort                      bool
+	podRequest                         *schedulercache.Resource
+	podPorts                           map[int]bool
+	matchingAntiAffinityTerms          []MatchingPodAntiAffinityTerm
+	serviceAffinityMatchingPodList     []*v1.Pod
+	serviceAffinityMatchingPodServices []*v1.Service
+}
