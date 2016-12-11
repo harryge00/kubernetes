@@ -44,12 +44,12 @@ func (pfactory *PredicateMetadataFactory) GetMetadata(pod *v1.Pod, nodeNameToInf
 	if err != nil {
 		return nil
 	}
-	predicateMetadata := &predicateMetadata{
-		pod:                       pod,
-		podBestEffort:             isPodBestEffort(pod),
-		podRequest:                GetResourceRequest(pod),
-		podPorts:                  GetUsedPorts(pod),
-		matchingAntiAffinityTerms: matchingTerms,
+	predicateMetadata := &algorithm.PredicateMetadata{
+		Pod:                       pod,
+		PodBestEffort:             isPodBestEffort(pod),
+		PodRequest:                GetResourceRequest(pod),
+		PodPorts:                  GetUsedPorts(pod),
+		MatchingAntiAffinityTerms: matchingTerms,
 	}
 	for predicateName, precomputeFunc := range predicatePrecomputations {
 		glog.V(10).Info("Precompute: %v", predicateName)

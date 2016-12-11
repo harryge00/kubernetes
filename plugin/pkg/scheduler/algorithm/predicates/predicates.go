@@ -482,7 +482,7 @@ func PodFitsResources(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, n
 	}
 
 	var podRequest *schedulercache.Resource
-	podRequest = predicateMeta.podRequest
+	podRequest = predicateMeta.PodRequest
 		// We couldn't parse metadata - fallback to computing it.
 		// podRequest = GetResourceRequest(pod)
 	if podRequest.MilliCPU == 0 && podRequest.Memory == 0 && podRequest.NvidiaGPU == 0 && len(podRequest.OpaqueIntResources) == 0 {
@@ -583,7 +583,7 @@ func podMatchesNodeLabels(pod *v1.Pod, node *v1.Node) bool {
 	return nodeAffinityMatches
 }
 
-func PodSelectorMatches(pod *v1.Pod, predicateMeta *PredicateMetadat, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
+func PodSelectorMatches(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	node := nodeInfo.Node()
 	if node == nil {
 		return false, nil, fmt.Errorf("node not found")
@@ -594,7 +594,7 @@ func PodSelectorMatches(pod *v1.Pod, predicateMeta *PredicateMetadat, nodeInfo *
 	return false, []algorithm.PredicateFailureReason{ErrNodeSelectorNotMatch}, nil
 }
 
-func PodFitsHost(pod *v1.Pod, predicateMeta *PredicateMetadat, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
+func PodFitsHost(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	if len(pod.Spec.NodeName) == 0 {
 		return true, nil, nil
 	}
@@ -660,15 +660,15 @@ type ServiceAffinity struct {
 // serviceAffinityPrecomputation should be run once by the scheduler before looping through the Predicate.  It is a helper function that
 // only should be referenced by NewServiceAffinityPredicate.
 func (s *ServiceAffinity) serviceAffinityPrecomputation(pm *algorithm.PredicateMetadata) {
-	if pm.pod == nil {
+	if pm.Pod == nil {
 		glog.Errorf("Cannot precompute service affinity, a pod is required to caluculate service affinity.")
 		return
 	}
 
 	var errSvc, errList error
 	// Store services which match the pod.
-	pm.serviceAffinityMatchingPodServices, errSvc = s.serviceLister.GetPodServices(pm.pod)
-	selector := CreateSelectorFromLabels(pm.pod.Labels)
+	pm.ServiceAffinityMatchingPodServices, errSvc = s.serviceLister.GetPodServices(pm.Pod)
+	selector := CreateSelectorFromLabels(pm.Pod.Labels)
 	// consider only the pods that belong to the same namespace
 	allMatches, errList := s.podLister.List(selector)
 
@@ -676,7 +676,7 @@ func (s *ServiceAffinity) serviceAffinityPrecomputation(pm *algorithm.PredicateM
 	if errSvc != nil || errList != nil {
 		glog.Errorf("Some Error were found while precomputing svc affinity: \nservices:%v , \npods:%v", errSvc, errList)
 	}
-	pm.serviceAffinityMatchingPodList = FilterPodsByNamespace(allMatches, pm.pod.Namespace)
+	pm.ServiceAffinityMatchingPodList = FilterPodsByNamespace(allMatches, pm.Pod.Namespace)
 }
 
 func NewServiceAffinityPredicate(podLister algorithm.PodLister, serviceLister algorithm.ServiceLister, nodeInfo NodeInfo, labels []string) (algorithm.FitPredicate, PredicateMetadataModifier) {
@@ -715,13 +715,13 @@ func NewServiceAffinityPredicate(podLister algorithm.PodLister, serviceLister al
 func (s *ServiceAffinity) checkServiceAffinity(pod *v1.Pod, pm *algorithm.PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	var services []*v1.Service
 	var pods []*v1.Pod
-	if pm.serviceAffinityMatchingPodList != nil || pm.serviceAffinityMatchingPodServices != nil {
-		services = pm.serviceAffinityMatchingPodServices
-		pods = pm.serviceAffinityMatchingPodList
+	if pm.ServiceAffinityMatchingPodList != nil || pm.ServiceAffinityMatchingPodServices != nil {
+		services = pm.ServiceAffinityMatchingPodServices
+		pods = pm.ServiceAffinityMatchingPodList
 	} else {
 		// Make the predicate resilient in case metadata is missing.
 		s.serviceAffinityPrecomputation(pm)
-		pods, services = pm.serviceAffinityMatchingPodList, pm.serviceAffinityMatchingPodServices
+		pods, services = pm.ServiceAffinityMatchingPodList, pm.ServiceAffinityMatchingPodServices
 	}
 	node := nodeInfo.Node()
 	if node == nil {
@@ -750,7 +750,7 @@ func (s *ServiceAffinity) checkServiceAffinity(pod *v1.Pod, pm *algorithm.Predic
 
 func PodFitsHostPorts(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	var wantPorts map[int]bool
-	wantPorts = predicateMeta.podPorts
+	wantPorts = predicateMeta.PodPorts
 		// We couldn't parse metadata - fallback to computing it.
 		// wantPorts = GetUsedPorts(pod)
 	if len(wantPorts) == 0 {
@@ -799,7 +799,7 @@ func haveSame(a1, a2 []string) bool {
 
 func GeneralPredicates(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	var predicateFails []algorithm.PredicateFailureReason
-	fit, reasons, err := PodFitsResources(pod, meta, nodeInfo)
+	fit, reasons, err := PodFitsResources(pod, predicateMeta, nodeInfo)
 	if err != nil {
 		return false, predicateFails, err
 	}
@@ -807,7 +807,7 @@ func GeneralPredicates(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, 
 		predicateFails = append(predicateFails, reasons...)
 	}
 
-	fit, reasons, err = PodFitsHost(pod, meta, nodeInfo)
+	fit, reasons, err = PodFitsHost(pod, predicateMeta, nodeInfo)
 	if err != nil {
 		return false, predicateFails, err
 	}
@@ -815,7 +815,7 @@ func GeneralPredicates(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, 
 		predicateFails = append(predicateFails, reasons...)
 	}
 
-	fit, reasons, err = PodFitsHostPorts(pod, meta, nodeInfo)
+	fit, reasons, err = PodFitsHostPorts(pod, predicateMeta, nodeInfo)
 	if err != nil {
 		return false, predicateFails, err
 	}
@@ -823,7 +823,7 @@ func GeneralPredicates(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, 
 		predicateFails = append(predicateFails, reasons...)
 	}
 
-	fit, reasons, err = PodSelectorMatches(pod, meta, nodeInfo)
+	fit, reasons, err = PodSelectorMatches(pod, predicateMeta, nodeInfo)
 	if err != nil {
 		return false, predicateFails, err
 	}
@@ -849,12 +849,12 @@ func NewPodAffinityPredicate(info NodeInfo, podLister algorithm.PodLister, failu
 	return checker.InterPodAffinityMatches
 }
 
-func (c *PodAffinityChecker) InterPodAffinityMatches(pod *v1.Pod, meta interface{}, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
+func (c *PodAffinityChecker) InterPodAffinityMatches(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	node := nodeInfo.Node()
 	if node == nil {
 		return false, nil, fmt.Errorf("node not found")
 	}
-	if !c.satisfiesExistingPodsAntiAffinity(pod, meta, node) {
+	if !c.satisfiesExistingPodsAntiAffinity(pod, predicateMeta, node) {
 		return false, []algorithm.PredicateFailureReason{ErrPodAffinityNotMatch}, nil
 	}
 
@@ -980,7 +980,7 @@ func getMatchingAntiAffinityTerms(pod *v1.Pod, nodeInfoMap map[string]*scheduler
 				}
 				match := priorityutil.PodMatchesTermsNamespaceAndSelector(pod, namespaces, selector)
 				if match {
-					nodeResult = append(nodeResult, algorithm.MatchingPodAntiAffinityTerm{term: &term, node: node})
+					nodeResult = append(nodeResult, algorithm.MatchingPodAntiAffinityTerm{Term: &term, Node: node})
 				}
 			}
 		}
@@ -1012,7 +1012,7 @@ func (c *PodAffinityChecker) getMatchingAntiAffinityTerms(pod *v1.Pod, allPods [
 				}
 				match := priorityutil.PodMatchesTermsNamespaceAndSelector(pod, namespaces, selector)
 				if match {
-					result = append(result, algorithm.MatchingPodAntiAffinityTerm{term: &term, node: existingPodNode})
+					result = append(result, algorithm.MatchingPodAntiAffinityTerm{Term: &term, Node: existingPodNode})
 				}
 			}
 		}
@@ -1022,10 +1022,10 @@ func (c *PodAffinityChecker) getMatchingAntiAffinityTerms(pod *v1.Pod, allPods [
 
 // Checks if scheduling the pod onto this node would break any anti-affinity
 // rules indicated by the existing pods.
-func (c *PodAffinityChecker) satisfiesExistingPodsAntiAffinity(pod *v1.Pod, meta interface{}, node *v1.Node) bool {
+func (c *PodAffinityChecker) satisfiesExistingPodsAntiAffinity(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, node *v1.Node) bool {
 	var matchingTerms []algorithm.MatchingPodAntiAffinityTerm
 	// if predicateMeta, ok := meta.(*PredicateMetadata); ok {
-		matchingTerms = predicateMeta.matchingAntiAffinityTerms
+		matchingTerms = predicateMeta.MatchingAntiAffinityTerms
 	// } else {
 	// 	allPods, err := c.podLister.List(labels.Everything())
 	// 	if err != nil {
@@ -1038,9 +1038,9 @@ func (c *PodAffinityChecker) satisfiesExistingPodsAntiAffinity(pod *v1.Pod, meta
 	// 	}
 	// }
 	for _, term := range matchingTerms {
-		if c.failureDomains.NodesHaveSameTopologyKey(node, term.node, term.term.TopologyKey) {
+		if c.failureDomains.NodesHaveSameTopologyKey(node, term.Node, term.Term.TopologyKey) {
 			glog.V(10).Infof("Cannot schedule pod %+v onto node %v,because of PodAntiAffinityTerm %v",
-				podName(pod), node.Name, term.term)
+				podName(pod), node.Name, term.Term)
 			return false
 		}
 	}
@@ -1160,7 +1160,7 @@ func isPodBestEffort(pod *v1.Pod) bool {
 func CheckNodeMemoryPressurePredicate(pod *v1.Pod, predicateMeta *algorithm.PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
 	var podBestEffort bool
 	// if predicateMeta, ok := meta.(*PredicateMetadata); ok {
-		podBestEffort = predicateMeta.podBestEffort
+		podBestEffort = predicateMeta.PodBestEffort
 	// } else {
 		// We couldn't parse metadata - fallback to computing it.
 		// podBestEffort = isPodBestEffort(pod)

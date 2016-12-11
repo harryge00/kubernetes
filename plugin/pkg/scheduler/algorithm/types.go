@@ -68,16 +68,16 @@ type GetEquivalencePodFunc func(pod *v1.Pod) interface{}
 //  Note that PredicateMetadata and matchingPodAntiAffinityTerm need to be declared in the same file
 //  due to the way declarations are processed in predicate declaration unit tests.
 type MatchingPodAntiAffinityTerm struct {
-	term *v1.PodAffinityTerm
-	node *v1.Node
+	Term *v1.PodAffinityTerm
+	Node *v1.Node
 }
 
 type PredicateMetadata struct {
-	pod                                *v1.Pod
-	podBestEffort                      bool
-	podRequest                         *schedulercache.Resource
-	podPorts                           map[int]bool
-	matchingAntiAffinityTerms          []MatchingPodAntiAffinityTerm
-	serviceAffinityMatchingPodList     []*v1.Pod
-	serviceAffinityMatchingPodServices []*v1.Service
+	Pod                                *v1.Pod
+	PodBestEffort                      bool
+	PodRequest                         *schedulercache.Resource
+	PodPorts                           map[int]bool
+	MatchingAntiAffinityTerms          []MatchingPodAntiAffinityTerm
+	ServiceAffinityMatchingPodList     []*v1.Pod
+	ServiceAffinityMatchingPodServices []*v1.Service
 }
