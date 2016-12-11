@@ -25,7 +25,7 @@ import (
 // FitPredicate is a function that indicates if a pod fits into an existing node.
 // The failure information is given by the error.
 // TODO: Change interface{} to a specific type.
-type FitPredicate func(pod *v1.Pod, meta interface{}, nodeInfo *schedulercache.NodeInfo) (bool, []PredicateFailureReason, error)
+type FitPredicate func(pod *v1.Pod, predicateMeta *PredicateMetadata, nodeInfo *schedulercache.NodeInfo) (bool, []PredicateFailureReason, error)
 
 // PriorityMapFunction is a function that computes per-node results for a given node.
 // TODO: Figure out the exact API of this method.
@@ -64,3 +64,20 @@ type PredicateFailureReason interface {
 }
 
 type GetEquivalencePodFunc func(pod *v1.Pod) interface{}
+
+//  Note that PredicateMetadata and matchingPodAntiAffinityTerm need to be declared in the same file
+//  due to the way declarations are processed in predicate declaration unit tests.
+type MatchingPodAntiAffinityTerm struct {
+	Term *v1.PodAffinityTerm
+	Node *v1.Node
+}
+
+type PredicateMetadata struct {
+	Pod                                *v1.Pod
+	PodBestEffort                      bool
+	PodRequest                         *schedulercache.Resource
+	PodPorts                           map[int]bool
+	MatchingAntiAffinityTerms          []MatchingPodAntiAffinityTerm
+	ServiceAffinityMatchingPodList     []*v1.Pod
+	ServiceAffinityMatchingPodServices []*v1.Service
+}

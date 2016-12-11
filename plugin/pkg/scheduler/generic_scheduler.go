@@ -232,7 +232,8 @@ func findNodesThatFit(
 func podFitsOnNode(pod *v1.Pod, meta interface{}, info *schedulercache.NodeInfo, predicateFuncs map[string]algorithm.FitPredicate) (bool, []algorithm.PredicateFailureReason, error) {
 	var failedPredicates []algorithm.PredicateFailureReason
 	for _, predicate := range predicateFuncs {
-		fit, reasons, err := predicate(pod, meta, info)
+		pm := meta.(*algorithm.PredicateMetadata)
+		fit, reasons, err := predicate(pod, pm, info)
 		if err != nil {
 			err := fmt.Errorf("SchedulerPredicates failed due to %v, which is unexpected.", err)
 			return false, []algorithm.PredicateFailureReason{}, err
