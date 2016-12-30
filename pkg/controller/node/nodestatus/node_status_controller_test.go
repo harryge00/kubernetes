@@ -14,10 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package node
+package nodestatus
 
 import (
-	"net"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +38,8 @@ import (
 	"k8s.io/kubernetes/pkg/types"
 	"k8s.io/kubernetes/pkg/util/diff"
 	"k8s.io/kubernetes/pkg/util/node"
+	utilnode "k8s.io/kubernetes/pkg/util/node"
+	"k8s.io/kubernetes/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/util/wait"
 )
 
@@ -51,7 +52,43 @@ const (
 	testUnhealtyThreshold      = float32(0.55)
 )
 
-func NewNodeControllerFromClient(
+func newPod(name, host string) *v1.Pod {
+	pod := &v1.Pod{
+		ObjectMeta: v1.ObjectMeta{
+			Namespace: "default",
+			Name:      name,
+		},
+		Spec: v1.PodSpec{
+			NodeName: host,
+		},
+		Status: v1.PodStatus{
+			Conditions: []v1.PodCondition{
+				{
+					Type:   v1.PodReady,
+					Status: v1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	return pod
+}
+
+// Returns list of zones for all Nodes stored in FakeNodeHandler
+func getZones(nodeHandler *utils.FakeNodeHandler) []string {
+	nodes, _ := nodeHandler.List(v1.ListOptions{})
+	zones := sets.NewString()
+	for _, node := range nodes.Items {
+		zones.Insert(utilnode.GetZoneKey(&node))
+	}
+	return zones.List()
+}
+
+func createZoneID(region, zone string) string {
+	return region + ":\x00:" + zone
+}
+
+func NewNodeStatusControllerFromClient(
 	cloud cloudprovider.Interface,
 	kubeClient clientset.Interface,
 	podEvictionTimeout time.Duration,
@@ -61,17 +98,12 @@ func NewNodeControllerFromClient(
 	unhealthyZoneThreshold float32,
 	nodeMonitorGracePeriod time.Duration,
 	nodeStartupGracePeriod time.Duration,
-	nodeMonitorPeriod time.Duration,
-	clusterCIDR *net.IPNet,
-	serviceCIDR *net.IPNet,
-	nodeCIDRMaskSize int,
-	allocateNodeCIDRs bool) (*NodeController, error) {
+	nodeMonitorPeriod time.Duration) (*NodeStatusController, error) {
 
 	factory := informers.NewSharedInformerFactory(kubeClient, nil, controller.NoResyncPeriodFunc())
 
-	nc, err := NewNodeController(factory.Pods(), factory.Nodes(), factory.DaemonSets(), cloud, kubeClient, podEvictionTimeout, evictionLimiterQPS, secondaryEvictionLimiterQPS,
-		largeClusterThreshold, unhealthyZoneThreshold, nodeMonitorGracePeriod, nodeStartupGracePeriod, nodeMonitorPeriod, clusterCIDR,
-		serviceCIDR, nodeCIDRMaskSize, allocateNodeCIDRs)
+	nc, err := NewNodeStatusController(factory.Pods(), factory.Nodes(), factory.DaemonSets(), cloud, kubeClient, podEvictionTimeout, evictionLimiterQPS, secondaryEvictionLimiterQPS,
+		largeClusterThreshold, unhealthyZoneThreshold, nodeMonitorGracePeriod, nodeStartupGracePeriod, nodeMonitorPeriod)
 	if err != nil {
 		return nil, err
 	}
@@ -513,7 +545,7 @@ func TestMonitorNodeStatusEvictPods(t *testing.T) {
 	}
 
 	for _, item := range table {
-		nodeController, _ := NewNodeControllerFromClient(nil, item.fakeNodeHandler,
+		nodeController, _ := NewNodeStatusControllerFromClient(nil, item.fakeNodeHandler,
 			evictionTimeout, testRateLimiterQPS, testRateLimiterQPS, testLargeClusterThreshold, testUnhealtyThreshold, testNodeMonitorGracePeriod,
 			testNodeStartupGracePeriod, testNodeMonitorPeriod, nil, nil, 0, false)
 		nodeController.now = func() metav1.Time { return fakeNow }
@@ -657,7 +689,7 @@ func TestPodStatusChange(t *testing.T) {
 	}
 
 	for _, item := range table {
-		nodeController, _ := NewNodeControllerFromClient(nil, item.fakeNodeHandler,
+		nodeController, _ := NewNodeStatusControllerFromClient(nil, item.fakeNodeHandler,
 			evictionTimeout, testRateLimiterQPS, testRateLimiterQPS, testLargeClusterThreshold, testUnhealtyThreshold, testNodeMonitorGracePeriod,
 			testNodeStartupGracePeriod, testNodeMonitorPeriod, nil, nil, 0, false)
 		nodeController.now = func() metav1.Time { return fakeNow }
@@ -1173,7 +1205,7 @@ func TestMonitorNodeStatusEvictPodsWithDisruption(t *testing.T) {
 			Existing:  item.nodeList,
 			Clientset: fake.NewSimpleClientset(&v1.PodList{Items: item.podList}),
 		}
-		nodeController, _ := NewNodeControllerFromClient(nil, fakeNodeHandler,
+		nodeController, _ := NewNodeStatusControllerFromClient(nil, fakeNodeHandler,
 			evictionTimeout, testRateLimiterQPS, testRateLimiterQPS, testLargeClusterThreshold, testUnhealtyThreshold, testNodeMonitorGracePeriod,
 			testNodeStartupGracePeriod, testNodeMonitorPeriod, nil, nil, 0, false)
 		nodeController.now = func() metav1.Time { return fakeNow }
@@ -1264,10 +1296,10 @@ func TestCloudProviderNoRateLimit(t *testing.T) {
 		Clientset:      fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{*testutil.NewPod("pod0", "node0"), *testutil.NewPod("pod1", "node0")}}),
 		DeleteWaitChan: make(chan struct{}),
 	}
-	nodeController, _ := NewNodeControllerFromClient(nil, fnh, 10*time.Minute,
+	nodeController, _ := NewNodeStatusControllerFromClient(nil, fnh, 10*time.Minute,
 		testRateLimiterQPS, testRateLimiterQPS, testLargeClusterThreshold, testUnhealtyThreshold,
 		testNodeMonitorGracePeriod, testNodeStartupGracePeriod,
-		testNodeMonitorPeriod, nil, nil, 0, false)
+		testNodeMonitorPeriod)
 	nodeController.cloud = &fakecloud.FakeCloud{}
 	nodeController.now = func() metav1.Time { return metav1.Date(2016, 1, 1, 12, 0, 0, 0, time.UTC) }
 	nodeController.nodeExistsInCloudProvider = func(nodeName types.NodeName) (bool, error) {
@@ -1501,7 +1533,7 @@ func TestMonitorNodeStatusUpdateStatus(t *testing.T) {
 	}
 
 	for i, item := range table {
-		nodeController, _ := NewNodeControllerFromClient(nil, item.fakeNodeHandler, 5*time.Minute,
+		nodeController, _ := NewNodeStatusControllerFromClient(nil, item.fakeNodeHandler, 5*time.Minute,
 			testRateLimiterQPS, testRateLimiterQPS, testLargeClusterThreshold, testUnhealtyThreshold,
 			testNodeMonitorGracePeriod, testNodeStartupGracePeriod, testNodeMonitorPeriod, nil, nil, 0, false)
 		nodeController.now = func() metav1.Time { return fakeNow }
@@ -1734,7 +1766,7 @@ func TestMonitorNodeStatusMarkPodsNotReady(t *testing.T) {
 	}
 
 	for i, item := range table {
-		nodeController, _ := NewNodeControllerFromClient(nil, item.fakeNodeHandler, 5*time.Minute,
+		nodeController, _ := NewNodeStatusControllerFromClient(nil, item.fakeNodeHandler, 5*time.Minute,
 			testRateLimiterQPS, testRateLimiterQPS, testLargeClusterThreshold, testUnhealtyThreshold,
 			testNodeMonitorGracePeriod, testNodeStartupGracePeriod, testNodeMonitorPeriod, nil, nil, 0, false)
 		nodeController.now = func() metav1.Time { return fakeNow }
@@ -1795,10 +1827,10 @@ func TestNodeEventGeneration(t *testing.T) {
 		Clientset: fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{*testutil.NewPod("pod0", "node0")}}),
 	}
 
-	nodeController, _ := NewNodeControllerFromClient(nil, fakeNodeHandler, 5*time.Minute,
+	nodeController, _ := NewNodeStatusControllerFromClient(nil, fakeNodeHandler, 5*time.Minute,
 		testRateLimiterQPS, testRateLimiterQPS, testLargeClusterThreshold, testUnhealtyThreshold,
 		testNodeMonitorGracePeriod, testNodeStartupGracePeriod,
-		testNodeMonitorPeriod, nil, nil, 0, false)
+		testNodeMonitorPeriod)
 	nodeController.cloud = &fakecloud.FakeCloud{}
 	nodeController.nodeExistsInCloudProvider = func(nodeName types.NodeName) (bool, error) {
 		return false, nil
@@ -1909,7 +1941,7 @@ func TestCheckPod(t *testing.T) {
 		},
 	}
 
-	nc, _ := NewNodeControllerFromClient(nil, fake.NewSimpleClientset(), 0, 0, 0, 0, 0, 0, 0, 0, nil, nil, 0, false)
+	nc, _ := NewNodeStatusControllerFromClient(nil, fake.NewSimpleClientset(), 0, 0, 0, 0, 0, 0, 0, 0)
 	nc.nodeStore.Store = cache.NewStore(cache.MetaNamespaceKeyFunc)
 	nc.nodeStore.Store.Add(&v1.Node{
 		ObjectMeta: v1.ObjectMeta{
