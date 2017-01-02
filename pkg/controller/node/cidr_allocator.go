@@ -75,7 +75,6 @@ type rangeAllocator struct {
 // Caller must always pass in a list of existing nodes so the new allocator
 // can initialize its CIDR map. NodeList is only nil in testing.
 func NewCIDRRangeAllocator(client clientset.Interface, clusterCIDR *net.IPNet, serviceCIDR *net.IPNet, subNetMaskSize int, nodeList *v1.NodeList) (CIDRAllocator, error) {
-	glog.Infof("NewCIDRRangeAllocator")
 	eventBroadcaster := record.NewBroadcaster()
 	recorder := eventBroadcaster.NewRecorder(v1.EventSource{Component: "cidrAllocator"})
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -248,9 +247,10 @@ func (r *rangeAllocator) updateCIDRAllocation(data nodeAndCIDR) error {
 			return nil
 		}
 		podPatch := fmt.Sprintf(`{"spec":{"podCIDR":"%s"}}`, data.cidr.String())
-		if _, err := r.client.Core().Nodes().Patch(data.nodeName, api.StrategicMergePatchType, []byte(podPatch)); err != nil {
+		if node2, err := r.client.Core().Nodes().Patch(data.nodeName, api.StrategicMergePatchType, []byte(podPatch)); err != nil {
 			glog.Errorf("Failed while updating Node.Spec.PodCIDR (%d retries left): %v", podCIDRUpdateRetry-rep-1, err)
 		} else {
+			glog.Infof("new node:%v", node2)
 			break
 		}
 	}

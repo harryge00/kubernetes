@@ -43,7 +43,7 @@ func waitForUpdatedNodeWithTimeout(nodeHandler *testutil.FakeNodeHandler, number
 
 func TestAllocateOrOccupyCIDRSuccess(t *testing.T) {
 	flag.Set("alsologtostderr", "true")
-	flag.Set("v", "3")
+	flag.Set("v", "12")
 	flag.Parse()
 	testCases := []struct {
 		description           string
@@ -133,6 +133,7 @@ func TestAllocateOrOccupyCIDRSuccess(t *testing.T) {
 		expectedAllocatedCIDR string
 		allocatedCIDRs        []string
 	}) {
+		t.Logf("%s begin", tc.expectedAllocatedCIDR)
 		allocator, _ := NewCIDRRangeAllocator(tc.fakeNodeHandler, tc.clusterCIDR, tc.serviceCIDR, tc.subNetMaskSize, nil)
 		// this is a bit of white box testing
 		for _, allocated := range tc.allocatedCIDRs {
@@ -168,6 +169,7 @@ func TestAllocateOrOccupyCIDRSuccess(t *testing.T) {
 			t.Errorf("%v: Unable to find allocated CIDR %v, found updated Nodes with CIDRs: %v",
 				tc.description, tc.expectedAllocatedCIDR, seenCIDRs)
 		}
+		t.Logf("%s passed", tc.expectedAllocatedCIDR)
 	}
 
 	for _, tc := range testCases {
