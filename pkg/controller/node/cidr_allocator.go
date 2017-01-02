@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	apierrors "k8s.io/kubernetes/pkg/api/errors"
+	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/v1"
 	metav1 "k8s.io/kubernetes/pkg/apis/meta/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
@@ -229,7 +230,7 @@ func (r *rangeAllocator) updateCIDRAllocation(data nodeAndCIDR) error {
 	var node *v1.Node
 	defer r.removeNodeFromProcessing(data.nodeName)
 	for rep := 0; rep < podCIDRUpdateRetry; rep++ {
-		// TODO: change it to using PATCH instead of full Node updates.
+		// change it to using PATCH instead of full Node updates.
 		node, err = r.client.Core().Nodes().Get(data.nodeName, metav1.GetOptions{})
 		if err != nil {
 			glog.Errorf("Failed while getting node %v to retry updating Node.Spec.PodCIDR: %v", data.nodeName, err)
@@ -244,8 +245,8 @@ func (r *rangeAllocator) updateCIDRAllocation(data nodeAndCIDR) error {
 			}
 			return nil
 		}
-		node.Spec.PodCIDR = data.cidr.String()
-		if _, err := r.client.Core().Nodes().Update(node); err != nil {
+		podPatch := fmt.Sprintf(`{podCIDR:%s}`, data.cidr.String())
+		if _, err := r.client.Core().Nodes().Patch(node.Name, api.StrategicMergePatchType, []byte(podPatch), "spec"); err != nil {
 			glog.Errorf("Failed while updating Node.Spec.PodCIDR (%d retries left): %v", podCIDRUpdateRetry-rep-1, err)
 		} else {
 			break
