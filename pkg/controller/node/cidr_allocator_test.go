@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"flag"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset/fake"
 	"k8s.io/kubernetes/pkg/controller/node/testutil"
@@ -41,6 +42,9 @@ func waitForUpdatedNodeWithTimeout(nodeHandler *testutil.FakeNodeHandler, number
 }
 
 func TestAllocateOrOccupyCIDRSuccess(t *testing.T) {
+	flag.Set("alsologtostderr", "true")
+	flag.Set("v", "3")
+	flag.Parse()
 	testCases := []struct {
 		description           string
 		fakeNodeHandler       *testutil.FakeNodeHandler

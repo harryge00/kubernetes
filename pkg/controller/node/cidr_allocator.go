@@ -75,6 +75,7 @@ type rangeAllocator struct {
 // Caller must always pass in a list of existing nodes so the new allocator
 // can initialize its CIDR map. NodeList is only nil in testing.
 func NewCIDRRangeAllocator(client clientset.Interface, clusterCIDR *net.IPNet, serviceCIDR *net.IPNet, subNetMaskSize int, nodeList *v1.NodeList) (CIDRAllocator, error) {
+	glog.Infof("NewCIDRRangeAllocator")
 	eventBroadcaster := record.NewBroadcaster()
 	recorder := eventBroadcaster.NewRecorder(v1.EventSource{Component: "cidrAllocator"})
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -236,6 +237,7 @@ func (r *rangeAllocator) updateCIDRAllocation(data nodeAndCIDR) error {
 			glog.Errorf("Failed while getting node %v to retry updating Node.Spec.PodCIDR: %v", data.nodeName, err)
 			continue
 		}
+		glog.Infof("cidr:%s, Node before:%v", data.cidr.String(), node)
 		if node.Spec.PodCIDR != "" {
 			glog.Errorf("Node %v already has allocated CIDR %v. Releasing assigned one if different.", node.Name, node.Spec.PodCIDR)
 			if node.Spec.PodCIDR != data.cidr.String() {
@@ -245,13 +247,15 @@ func (r *rangeAllocator) updateCIDRAllocation(data nodeAndCIDR) error {
 			}
 			return nil
 		}
-		podPatch := fmt.Sprintf(`{podCIDR:%s}`, data.cidr.String())
-		if _, err := r.client.Core().Nodes().Patch(node.Name, api.StrategicMergePatchType, []byte(podPatch), "spec"); err != nil {
+		podPatch := fmt.Sprintf(`{"spec":{"podCIDR":"%s"}}`, data.cidr.String())
+		if _, err := r.client.Core().Nodes().Patch(data.nodeName, api.StrategicMergePatchType, []byte(podPatch)); err != nil {
 			glog.Errorf("Failed while updating Node.Spec.PodCIDR (%d retries left): %v", podCIDRUpdateRetry-rep-1, err)
 		} else {
 			break
 		}
 	}
+	node, _ = r.client.Core().Nodes().Get(data.nodeName, metav1.GetOptions{})
+	glog.Infof("Node after:%v", node)
 	if err != nil {
 		recordNodeStatusChange(r.recorder, node, "CIDRAssignmentFailed")
 		// We accept the fact that we may leek CIDRs here. This is safer than releasing
