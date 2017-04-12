@@ -416,10 +416,12 @@ func (rm *ReplicationManager) updatePod(old, cur interface{}) {
 	changedToReady := !api.IsPodReady(oldPod) && api.IsPodReady(curPod)
 	if api.IsPodReady(oldPod) != api.IsPodReady(curPod) {
 		record := rm.podControl.(controller.RealPodControl).Recorder
-		if api.IsPodReady(curPod) {
-			RecordRCEvent(record, curRC.Name, curPod.Namespace , curPod.Name, "RcUpdate", "PodReady")
-		} else {
-			RecordRCEvent(record, curRC.Name, curPod.Namespace , curPod.Name, "RcUpdate", "PodNotReady")
+		if curRC != nil {
+			if api.IsPodReady(curPod) {
+				RecordRCEvent(record, curRC.Name, curPod.Namespace, curPod.Name, "RcUpdate", "PodReady")
+			} else {
+				RecordRCEvent(record, curRC.Name, curPod.Namespace, curPod.Name, "RcUpdate", "PodNotReady")
+			}
 		}
 	}
 	if  curRC != nil {
