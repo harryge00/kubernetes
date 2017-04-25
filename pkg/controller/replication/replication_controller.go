@@ -23,6 +23,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"encoding/json"
 
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
@@ -68,6 +69,14 @@ const (
 	statusUpdateRetries = 1
 )
 
+type Transformation struct {
+	EventType string `json:"eventType,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	PodName string	`json:"podName,omitempty"`
+	RcName string	`json:"rcName,omitempty"`
+	Action string `json:"action,omitempty"`
+}
+var ttlMap TTLMap
 func getRCKind() unversioned.GroupVersionKind {
 	return v1.SchemeGroupVersion.WithKind("ReplicationController")
 }
@@ -183,6 +192,7 @@ func newReplicationManager(eventRecorder record.EventRecorder, podInformer cache
 	rm.syncHandler = rm.syncReplicationController
 	rm.podStoreSynced = rm.podController.HasSynced
 	rm.lookupCache = controller.NewMatchingCache(lookupCacheSize)
+	ttlMap = TTLMapNew()
 	return rm
 }
 
@@ -354,6 +364,7 @@ func (rm *ReplicationManager) addPod(obj interface{}) {
 		return
 	}
 
+	record := rm.podControl.(controller.RealPodControl).Recorder
 	if pod.DeletionTimestamp != nil {
 		// on a restart of the controller manager, it's possible a new pod shows up in a state that
 		// is already pending deletion. Prevent the pod from being a creation observation.
@@ -361,6 +372,7 @@ func (rm *ReplicationManager) addPod(obj interface{}) {
 		return
 	}
 	rm.expectations.CreationObserved(rcKey)
+	RecordRCEvent(record, rc.Name, pod.Namespace ,pod.Name, "RcPodAdd", "add")
 	rm.enqueueController(rc)
 }
 
@@ -370,6 +382,7 @@ func (rm *ReplicationManager) addPod(obj interface{}) {
 func (rm *ReplicationManager) updatePod(old, cur interface{}) {
 	curPod := cur.(*api.Pod)
 	oldPod := old.(*api.Pod)
+	curRC := rm.getPodController(curPod)
 	if curPod.ResourceVersion == oldPod.ResourceVersion {
 		// Periodic resync will send update events for all known pods.
 		// Two different versions of the same pod will always have different RVs.
@@ -400,9 +413,18 @@ func (rm *ReplicationManager) updatePod(old, cur interface{}) {
 			rm.enqueueController(oldRC)
 		}
 	}
-
 	changedToReady := !api.IsPodReady(oldPod) && api.IsPodReady(curPod)
-	if curRC := rm.getPodController(curPod); curRC != nil {
+	if api.IsPodReady(oldPod) != api.IsPodReady(curPod) {
+		record := rm.podControl.(controller.RealPodControl).Recorder
+		if curRC != nil {
+			if api.IsPodReady(curPod) {
+				RecordRCEvent(record, curRC.Name, curPod.Namespace, curPod.Name, "RcUpdate", "PodReady")
+			} else {
+				RecordRCEvent(record, curRC.Name, curPod.Namespace, curPod.Name, "RcUpdate", "PodNotReady")
+			}
+		}
+	}
+	if  curRC != nil {
 		rm.enqueueController(curRC)
 		// TODO: MinReadySeconds in the Pod will generate an Available condition to be added in
 		// the Pod status which in turn will trigger a requeue of the owning replication controller
@@ -447,6 +469,10 @@ func (rm *ReplicationManager) deletePod(obj interface{}) {
 		}
 		rm.expectations.DeletionObserved(rcKey, controller.PodKey(pod))
 		rm.enqueueController(rc)
+		record := rm.podControl.(controller.RealPodControl).Recorder
+		if ttlMap.add(rc.Name + pod.Namespace + pod.Name) == false {
+			RecordRCEvent(record, rc.Name, pod.Namespace ,pod.Name, "RcPodDelete", "delete")
+		}
 	}
 }
 
@@ -748,3 +774,23 @@ func (rm *ReplicationManager) syncReplicationController(key string) error {
 
 	return manageReplicasErr
 }
+
+func RecordRCEvent(recorder record.EventRecorder, rcName, namespace, podName, event, action string) {
+	ref := &api.ObjectReference{
+		Kind:      "replication-controller",
+		Name:      podName,
+		Namespace: namespace,
+	}
+	glog.V(2).Infof("Recording %s event message for replication %s", event, rcName)
+	transformation := Transformation{
+		RcName: rcName,
+		Namespace: namespace,
+		PodName: podName,
+		EventType: event,
+		Action: action,
+	}
+	message,_ := json.Marshal(transformation)
+
+	recorder.Eventf(ref, api.EventTypeNormal, "RcUpdate", "%s", string(message))
+}
+

@@ -27,8 +27,33 @@ import (
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	unversionedcore "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 	"k8s.io/kubernetes/pkg/labels"
+	"time"
 )
 
+type TTLMap struct{
+	data map[string]time.Time
+}
+func TTLMapNew() TTLMap {
+	var ttlMap TTLMap
+	ttlMap.data = make(map[string]time.Time)
+	return ttlMap
+}
+func (ttlMap *TTLMap) add(key string) bool{
+	fmt.Println(key)
+	val, ok := ttlMap.data[key]
+	fmt.Println(val)
+	if ok {
+		if time.Now().Sub(val) > time.Minute  {
+			ttlMap.data[key] = time.Now()
+			return false
+		} else {
+			return true
+		}
+	} else {
+		ttlMap.data[key] = time.Now()
+		return false
+	}
+}
 // updateReplicationControllerStatus attempts to update the Status.Replicas of the given controller, with a single GET/PUT retry.
 func updateReplicationControllerStatus(c unversionedcore.ReplicationControllerInterface, rc api.ReplicationController, newStatus api.ReplicationControllerStatus) (updateErr error) {
 	// This is the steady state. It happens when the rc doesn't have any expectations, since
@@ -176,3 +201,5 @@ func filterOutCondition(conditions []api.ReplicationControllerCondition, condTyp
 	}
 	return newConditions
 }
+
+
