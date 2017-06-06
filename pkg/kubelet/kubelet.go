@@ -1423,6 +1423,17 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 		}
 	}
 
+	podInfraContainerStatus := podStatus.FindContainerStatusByName(leaky.PodInfraContainerName)
+	if podInfraContainerStatus == nil || podInfraContainerStatus.State != kubecontainer.ContainerStateRunning {
+		glog.V(4).Infof("Found pod infra container for %q is not at runing state", format.Pod(pod))
+		glog.V(4).Infof("Change the Pod ConditionStatus for %q ", format.Pod(pod))
+		for l, c := range apiPodStatus.Conditions {
+			if c.Type == api.PodReady {
+				apiPodStatus.Conditions[l].Status = api.ConditionFalse
+			}
+		}
+	}
+
 	// Update status in the status manager
 	kl.statusManager.SetPodStatus(pod, apiPodStatus)
 
