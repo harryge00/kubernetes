@@ -53,6 +53,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/images"
 	"k8s.io/kubernetes/pkg/kubelet/kuberuntime"
 	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
+	"k8s.io/kubernetes/pkg/kubelet/leaky"
 	"k8s.io/kubernetes/pkg/kubelet/metrics"
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	"k8s.io/kubernetes/pkg/kubelet/pleg"
@@ -1425,8 +1426,7 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 
 	podInfraContainerStatus := podStatus.FindContainerStatusByName(leaky.PodInfraContainerName)
 	if podInfraContainerStatus == nil || podInfraContainerStatus.State != kubecontainer.ContainerStateRunning {
-		glog.V(4).Infof("Found pod infra container for %q is not at runing state", format.Pod(pod))
-		glog.V(4).Infof("Change the Pod ConditionStatus for %q ", format.Pod(pod))
+		glog.V(6).Infof("Found pod infra container for %q is not at runing state, change the Pod conditionStatus", format.Pod(pod))
 		for l, c := range apiPodStatus.Conditions {
 			if c.Type == api.PodReady {
 				apiPodStatus.Conditions[l].Status = api.ConditionFalse
