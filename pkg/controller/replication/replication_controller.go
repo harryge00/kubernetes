@@ -438,9 +438,7 @@ func (rm *ReplicationManager) updatePod(old, cur interface{}) {
 			ttlMap.Add(timeKey, curPod.Status.StartTime)
 			if oldPod.Status.ContainerStatuses[0].RestartCount < curPod.Status.ContainerStatuses[0].RestartCount {
 				glog.V(2).Infof("Recording %s Pod Infra destroyed. %v ------ %v ", curPod.Name, oldPod.Status.StartTime, curPod.Status.StartTime)
-				RecordRCEvent(record, curRC.Name, curPod.Namespace, curPod.Name, "RcUpdate", "RcPodNotReady")
-
-				RecordRCEvent(record, curRC.Name, curPod.Namespace, curPod.Name, "RcUpdate", "RcPodReady")
+				RecordRCEvent(record, curRC.Name, curPod.Namespace, curPod.Name, "RcUpdate", "RcPodReReady")
 			}
 		}
 	}
