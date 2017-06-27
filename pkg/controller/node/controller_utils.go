@@ -65,12 +65,6 @@ func deletePods(kubeClient clientset.Interface, recorder record.EventRecorder, n
 			continue
 		}
 
-		for _, p := range pod.Spec.Volumes {
-			if p.HostPath != nil && p.HostPath.Path != "" {
-				recorder.Eventf(&pod, api.EventTypeNormal, "NodeControllerEviction", "Can't delete Pod %s from Node %s because it has hostpath volume.Please notice it.You can mannually delete pod forcely", pod.Name, nodeName)
-				continue
-			}
-		}
 		// Set reason and message in the pod object.
 		if _, err = setPodTerminationReason(kubeClient, &pod, nodeName); err != nil {
 			if errors.IsConflict(err) {
