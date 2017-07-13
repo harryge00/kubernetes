@@ -1,6 +1,6 @@
 1.6.7版本的update-all.sh与以往很不同．运行之前需要去  
 ```
-pull reg.dhdc.com/dhc_cloud/kube-cross:v1.7.6-k8s1.6-0
+pull reg.dhdc.com/luobingli/kube-cross:v1.7.6-k8s1.6-0
 ```
 然后改tag为：  
 ```
