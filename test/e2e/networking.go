@@ -21,7 +21,7 @@ import (
 	"net/http"
 
 	. "github.com/onsi/ginkgo"
-	"k8s.io/kubernetes/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -56,11 +56,13 @@ var _ = framework.KubeDescribe("Networking", func() {
 			{path: "/healthz"},
 			{path: "/api"},
 			{path: "/apis"},
-			{path: "/logs"},
 			{path: "/metrics"},
 			{path: "/swaggerapi"},
 			{path: "/version"},
 			// TODO: test proxy links here
+		}
+		if !framework.ProviderIs("gke") {
+			tests = append(tests, struct{ path string }{path: "/logs"})
 		}
 		for _, test := range tests {
 			By(fmt.Sprintf("testing: %s", test.path))

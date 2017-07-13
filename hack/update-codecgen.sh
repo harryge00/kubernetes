@@ -38,7 +38,11 @@ generated_files=($(
         -o -wholename '*/vendor/*' \
         -o -wholename '*/codecgen-*-1234.generated.go' \
       \) -prune \
-    \) -name '*.generated.go' | LC_ALL=C sort -r))
+    \) -name '*.generated.go' | LC_ALL=C sort -r
+
+  find ./vendor/k8s.io/metrics/ \
+    -name '*.generated.go' | LC_ALL=C sort -r
+))
 
 # We only work for deps within this prefix.
 my_prefix="k8s.io/kubernetes"

@@ -22,12 +22,16 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/arm/compute"
 	"github.com/golang/glog"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/cloudprovider"
-	"k8s.io/kubernetes/pkg/types"
+	"k8s.io/kubernetes/pkg/volume"
 )
 
 const (
-	maxLUN = 64 // max number of LUNs per VM
+	maxLUN               = 64 // max number of LUNs per VM
+	errLeaseFailed       = "AcquireDiskLeaseFailed"
+	errLeaseIDMissing    = "LeaseIdMissing"
+	errContainerNotFound = "ContainerNotFound"
 )
 
 // AttachDisk attaches a vhd to vm
@@ -60,11 +64,21 @@ func (az *Cloud) AttachDisk(diskName, diskURI string, nodeName types.NodeName, l
 		},
 	}
 	vmName := mapNodeNameToVMName(nodeName)
-	_, err = az.VirtualMachinesClient.CreateOrUpdate(az.ResourceGroup, vmName, newVM, nil)
+	glog.V(2).Infof("create(%s): vm(%s)", az.ResourceGroup, vmName)
+	az.operationPollRateLimiter.Accept()
+	resp, err := az.VirtualMachinesClient.CreateOrUpdate(az.ResourceGroup, vmName, newVM, nil)
+	if az.CloudProviderBackoff && shouldRetryAPIRequest(resp, err) {
+		glog.V(2).Infof("create(%s) backing off: vm(%s)", az.ResourceGroup, vmName)
+		retryErr := az.CreateOrUpdateVMWithRetry(vmName, newVM)
+		if retryErr != nil {
+			err = retryErr
+			glog.V(2).Infof("create(%s) abort backoff: vm(%s)", az.ResourceGroup, vmName)
+		}
+	}
 	if err != nil {
 		glog.Errorf("azure attach failed, err: %v", err)
 		detail := err.Error()
-		if strings.Contains(detail, "Code=\"AcquireDiskLeaseFailed\"") {
+		if strings.Contains(detail, errLeaseFailed) {
 			// if lease cannot be acquired, immediately detach the disk and return the original error
 			glog.Infof("failed to acquire disk lease, try detach")
 			az.DetachDiskByName(diskName, diskURI, nodeName)
@@ -131,7 +145,17 @@ func (az *Cloud) DetachDiskByName(diskName, diskURI string, nodeName types.NodeN
 		},
 	}
 	vmName := mapNodeNameToVMName(nodeName)
-	_, err = az.VirtualMachinesClient.CreateOrUpdate(az.ResourceGroup, vmName, newVM, nil)
+	glog.V(2).Infof("create(%s): vm(%s)", az.ResourceGroup, vmName)
+	az.operationPollRateLimiter.Accept()
+	resp, err := az.VirtualMachinesClient.CreateOrUpdate(az.ResourceGroup, vmName, newVM, nil)
+	if az.CloudProviderBackoff && shouldRetryAPIRequest(resp, err) {
+		glog.V(2).Infof("create(%s) backing off: vm(%s)", az.ResourceGroup, vmName)
+		retryErr := az.CreateOrUpdateVMWithRetry(vmName, newVM)
+		if retryErr != nil {
+			err = retryErr
+			glog.V(2).Infof("create(%s) abort backoff: vm(%s)", az.ResourceGroup, vmName)
+		}
+	}
 	if err != nil {
 		glog.Errorf("azure disk detach failed, err: %v", err)
 	} else {
@@ -235,6 +259,12 @@ func (az *Cloud) DeleteVolume(name, uri string) error {
 	err = az.deleteVhdBlob(accountName, key, blob)
 	if err != nil {
 		glog.Warningf("failed to delete blob %s err: %v", uri, err)
+		detail := err.Error()
+		if strings.Contains(detail, errLeaseIDMissing) {
+			// disk is still being used
+			// see https://msdn.microsoft.com/en-us/library/microsoft.windowsazure.storage.blob.protocol.bloberrorcodestrings.leaseidmissing.aspx
+			return volume.NewDeletedVolumeInUseError(fmt.Sprintf("disk %q is still in use while being deleted", name))
+		}
 		return fmt.Errorf("failed to delete vhd %v, account %s, blob %s, err: %v", uri, accountName, blob, err)
 	}
 	glog.V(4).Infof("blob %s deleted", uri)
