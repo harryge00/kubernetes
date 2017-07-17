@@ -18,18 +18,17 @@ docker pull reg.dhdc.com/luobingli/kube-cross:v1.7.6-k8s1.6-0
 ```  
 然后改tag为：  
 ```
-docker tag gcr.io/google_containers/kube-cross:v1.7.6-k8s1.6-0 reg.dhdc.com/luobingli/kube-cross:v1.7.6-k8s1.6-0
+docker tag reg.dhdc.com/luobingli/kube-cross:v1.7.6-k8s1.6-0  gcr.io/google_containers/kube-cross:v1.7.6-k8s1.6-0
 ```
 
 #### gen-swagger-docs 镜像
 获取私有镜像：  
 ```
-reg.dhdc.com/luobingli
 docker pull reg.dhdc.com/wangzhuzhen/gen-swagger-docs:v8
 ```  
 然后改tag为：  
 ```
-docker tag gcr.io/google_containers/gen-swagger-docs:v8 reg.dhdc.com/wangzhuzhen/gen-swagger-docs:v8
+docker tag reg.dhdc.com/wangzhuzhen/gen-swagger-docs:v8 gcr.io/google_containers/gen-swagger-docs:v8
 ```
 
 ### 修改文件执行权限  
