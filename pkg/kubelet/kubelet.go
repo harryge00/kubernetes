@@ -1120,6 +1120,10 @@ type Kubelet struct {
 	// dockerLegacyService contains some legacy methods for backward compatibility.
 	// It should be set only when docker is using non json-file logging driver.
 	dockerLegacyService dockershim.DockerLegacyService
+/*
+	containerWorkLoad []map[string][]int32
+	longthPerContainerWorkLoad int
+*/
 }
 
 // setupDataDirs creates:

@@ -4850,6 +4850,13 @@ The resulting set of endpoints can be viewed as:<br>
 <td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
 <td class="tableblock halign-left valign-top"></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">isScale</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Information get from application to indicating whether to scale up or scale down the number of pods</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">true</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">boolean</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+</tr>
 </tbody>
 </table>
 
@@ -6969,6 +6976,13 @@ Examples:<br>
 <td class="tableblock halign-left valign-top"><p class="tableblock">boolean</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">serviceProbe</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Periodic probe of container sclaeinfo. Container will be restarted if the probe fails. Cannot be updated.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="#_v1_probe">v1.Probe</a></p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
 </tbody>
 </table>
 
@@ -8206,6 +8220,20 @@ Examples:<br>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Container&#8217;s ID in the format <em>docker://&lt;container_id&gt;</em>. More info: <a href="http://kubernetes.io/docs/user-guide/container-environment#container-information">http://kubernetes.io/docs/user-guide/container-environment#container-information</a></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">isScale</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Indicate whether the container can be scale down</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">true</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">boolean</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">workLoad</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Indicate the app report workload for the container</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">true</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">integer (int32)</p></td>
 <td class="tableblock halign-left valign-top"></td>
 </tr>
 </tbody>
@@ -9843,7 +9871,7 @@ Examples:<br>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2017-03-16 22:50:42 UTC
+Last updated 2017-07-13 11:53:08 UTC
 </div>
 </div>
 </body>

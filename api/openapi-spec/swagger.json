@@ -37811,6 +37811,10 @@
       "description": "Security options the pod should run with. More info: http://releases.k8s.io/HEAD/docs/design/security_context.md",
       "$ref": "#/definitions/io.k8s.kubernetes.pkg.api.v1.SecurityContext"
      },
+     "serviceProbe": {
+      "description": "Periodic probe of container sclaeinfo. Container will be restarted if the probe fails. Cannot be updated.",
+      "$ref": "#/definitions/io.k8s.kubernetes.pkg.api.v1.Probe"
+     },
      "stdin": {
       "description": "Whether this container should allocate a buffer for stdin in the container runtime. If this is not set, reads from stdin in the container will always result in EOF. Default is false.",
       "type": "boolean"
@@ -37978,7 +37982,9 @@
      "ready",
      "restartCount",
      "image",
-     "imageID"
+     "imageID",
+     "isScale",
+     "workLoad"
     ],
     "properties": {
      "containerID": {
@@ -37992,6 +37998,10 @@
      "imageID": {
       "description": "ImageID of the container's image.",
       "type": "string"
+     },
+     "isScale": {
+      "description": "Indicate whether the container can be scale down",
+      "type": "boolean"
      },
      "lastState": {
       "description": "Details about the container's last termination condition.",
@@ -38013,6 +38023,11 @@
      "state": {
       "description": "Details about the container's current condition.",
       "$ref": "#/definitions/io.k8s.kubernetes.pkg.api.v1.ContainerState"
+     },
+     "workLoad": {
+      "description": "Indicate the app report workload for the container",
+      "type": "integer",
+      "format": "int32"
      }
     }
    },
@@ -40005,6 +40020,9 @@
    },
    "io.k8s.kubernetes.pkg.api.v1.PodStatus": {
     "description": "PodStatus represents information about the status of a pod. Status may trail the actual state of a system.",
+    "required": [
+     "isScale"
+    ],
     "properties": {
      "conditions": {
       "description": "Current service state of pod. More info: http://kubernetes.io/docs/user-guide/pod-states#pod-conditions",
@@ -40030,6 +40048,10 @@
       "items": {
        "$ref": "#/definitions/io.k8s.kubernetes.pkg.api.v1.ContainerStatus"
       }
+     },
+     "isScale": {
+      "description": "Information get from application to indicating whether to scale up or scale down the number of pods",
+      "type": "boolean"
      },
      "message": {
       "description": "A human readable message indicating details about why the pod is in this condition.",

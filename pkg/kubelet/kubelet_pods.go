@@ -1229,6 +1229,11 @@ func (kl *Kubelet) convertStatusToAPIStatus(pod *v1.Pod, podStatus *kubecontaine
 		len(pod.Spec.InitContainers) > 0,
 		false,
 	)
+
+	for i, _ := range apiPodStatus.ContainerStatuses {
+		apiPodStatus.ContainerStatuses[i].IsScale = true
+	}
+
 	apiPodStatus.InitContainerStatuses = kl.convertToAPIContainerStatuses(
 		pod, podStatus,
 		pod.Status.InitContainerStatuses,
@@ -1237,6 +1242,9 @@ func (kl *Kubelet) convertStatusToAPIStatus(pod *v1.Pod, podStatus *kubecontaine
 		true,
 	)
 
+	apiPodStatus.IsScale = true
+
+	glog.V(3).Infof("Initial Pod status for pod: %v", apiPodStatus)
 	return &apiPodStatus
 }
 

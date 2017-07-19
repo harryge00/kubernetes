@@ -843,6 +843,7 @@ func autoConvert_v1_Container_To_api_Container(in *Container, out *api.Container
 	out.Stdin = in.Stdin
 	out.StdinOnce = in.StdinOnce
 	out.TTY = in.TTY
+	out.ServiceProbe = (*api.Probe)(unsafe.Pointer(in.ServiceProbe))
 	return nil
 }
 
@@ -873,6 +874,7 @@ func autoConvert_api_Container_To_v1_Container(in *api.Container, out *Container
 	out.Stdin = in.Stdin
 	out.StdinOnce = in.StdinOnce
 	out.TTY = in.TTY
+	out.ServiceProbe = (*Probe)(unsafe.Pointer(in.ServiceProbe))
 	return nil
 }
 
@@ -1033,6 +1035,8 @@ func autoConvert_v1_ContainerStatus_To_api_ContainerStatus(in *ContainerStatus, 
 	out.Image = in.Image
 	out.ImageID = in.ImageID
 	out.ContainerID = in.ContainerID
+	out.IsScale = in.IsScale
+	out.WorkLoad = in.WorkLoad
 	return nil
 }
 
@@ -1053,6 +1057,8 @@ func autoConvert_api_ContainerStatus_To_v1_ContainerStatus(in *api.ContainerStat
 	out.Image = in.Image
 	out.ImageID = in.ImageID
 	out.ContainerID = in.ContainerID
+	out.IsScale = in.IsScale
+	out.WorkLoad = in.WorkLoad
 	return nil
 }
 
@@ -3298,6 +3304,7 @@ func autoConvert_v1_PodStatus_To_api_PodStatus(in *PodStatus, out *api.PodStatus
 	out.InitContainerStatuses = *(*[]api.ContainerStatus)(unsafe.Pointer(&in.InitContainerStatuses))
 	out.ContainerStatuses = *(*[]api.ContainerStatus)(unsafe.Pointer(&in.ContainerStatuses))
 	out.QOSClass = api.PodQOSClass(in.QOSClass)
+	out.IsScale = in.IsScale
 	return nil
 }
 
@@ -3316,6 +3323,7 @@ func autoConvert_api_PodStatus_To_v1_PodStatus(in *api.PodStatus, out *PodStatus
 	out.QOSClass = PodQOSClass(in.QOSClass)
 	out.InitContainerStatuses = *(*[]ContainerStatus)(unsafe.Pointer(&in.InitContainerStatuses))
 	out.ContainerStatuses = *(*[]ContainerStatus)(unsafe.Pointer(&in.ContainerStatuses))
+	out.IsScale = in.IsScale
 	return nil
 }
 

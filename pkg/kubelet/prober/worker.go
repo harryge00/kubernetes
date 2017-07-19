@@ -26,6 +26,7 @@ import (
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/prober/results"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	"encoding/json"
 )
 
 // worker handles the periodic probing of its assigned container. Each worker has a go-routine
@@ -80,6 +81,7 @@ func newWorker(
 		probeType:    probeType,
 		probeManager: m,
 	}
+	//TODO：
 
 	switch probeType {
 	case readiness:
@@ -90,8 +92,12 @@ func newWorker(
 		w.spec = container.LivenessProbe
 		w.resultsManager = m.livenessManager
 		w.initialValue = results.Success
-	}
+	case service:
+		w.spec = container.ServiceProbe
+		w.resultsManager = m.serviceManager
+		w.initialValue = results.Failure
 
+	}
 	return w
 }
 
@@ -196,10 +202,38 @@ func (w *worker) doProbe() (keepGoing bool) {
 	// TODO: in order for exec probes to correctly handle downward API env, we must be able to reconstruct
 	// the full container environment here, OR we must make a call to the CRI in order to get those environment
 	// values from the running container.
-	result, err := w.probeManager.prober.probe(w.probeType, w.pod, status, w.container, w.containerID)
+	result, output, err := w.probeManager.prober.probe(w.probeType, w.pod, status, w.container, w.containerID)
 	if err != nil {
 		// Prober error, throw away the result.
 		return true
+	}
+
+	if w.probeType == service && result == results.Success {
+		var scaleinfoIn []byte
+		var scaleinfoOut ScaleInfo
+		scaleinfoIn = []byte(output)
+		//	if err = json.Unmarshal(scaleinfo_in, scaleinfo_out); err != nil {
+		if err = json.Unmarshal(scaleinfoIn, &scaleinfoOut); err != nil {
+			glog.V(3).Infof("Response: %+v, errored: %v", scaleinfoIn, err)
+			return true
+		}
+		c.IsScale = scaleinfoOut.IsScale
+		c.WorkLoad = scaleinfoOut.Workload
+
+		// 默认情况下 Pod 是可缩容的(v1.PodStatus.IsScale = ture), 当且仅当某个容器的 serviceProbe 探测结果是不可缩容时进行状态更新
+		if !c.IsScale {
+			status.IsScale = c.IsScale
+		}
+
+		for i, _ := range status.ContainerStatuses {
+			if status.ContainerStatuses[i].Name == w.container.Name {
+				status.ContainerStatuses[i].IsScale = c.IsScale
+				status.ContainerStatuses[i].WorkLoad = c.WorkLoad
+				break
+			}
+		}
+		glog.V(3).Infof("ServiceProbe Pod status for pod: %v", format.Pod(w.pod))
+		w.probeManager.statusManager.SetPodStatus(w.pod, status)
 	}
 
 	if w.lastResult == result {
@@ -226,4 +260,10 @@ func (w *worker) doProbe() (keepGoing bool) {
 	}
 
 	return true
+}
+
+//结构化存储 Api 返回的 JSON 数据，注意字段首字母必须大写
+type ScaleInfo struct {
+	Workload     int32 `json:"workload"`
+	IsScale       bool `json:"isScale"`
 }

@@ -72,6 +72,9 @@ type manager struct {
 	// livenessManager manages the results of liveness probes
 	livenessManager results.Manager
 
+	// serviceManager manages the results of liveness probes
+	serviceManager results.Manager
+
 	// prober executes the probe actions.
 	prober *prober
 }
@@ -113,6 +116,7 @@ type probeType int
 const (
 	liveness probeType = iota
 	readiness
+	service
 )
 
 // For debugging.
@@ -122,6 +126,8 @@ func (t probeType) String() string {
 		return "Readiness"
 	case liveness:
 		return "Liveness"
+	case service:
+		return "Service"
 	default:
 		return "UNKNOWN"
 	}
@@ -155,6 +161,18 @@ func (m *manager) AddPod(pod *v1.Pod) {
 				return
 			}
 			w := newWorker(m, liveness, pod, c)
+			m.workers[key] = w
+			go w.run()
+		}
+
+		if c.ServiceProbe != nil {
+			key.probeType = service
+			if _, ok := m.workers[key]; ok {
+				glog.Errorf("Service probe already exists! %v - %v",
+					format.Pod(pod), c.Name)
+				return
+			}
+			w := newWorker(m, service, pod, c)
 			m.workers[key] = w
 			go w.run()
 		}
@@ -207,6 +225,7 @@ func (m *manager) UpdatePodStatus(podUID types.UID, podStatus *v1.PodStatus) {
 		}
 		podStatus.ContainerStatuses[i].Ready = ready
 	}
+
 	// init containers are ready if they have exited with success or if a readiness probe has
 	// succeeded.
 	for i, c := range podStatus.InitContainerStatuses {
@@ -245,3 +264,4 @@ func (m *manager) updateReadiness() {
 	ready := update.Result == results.Success
 	m.statusManager.SetContainerReadiness(update.PodUID, update.ContainerID, ready)
 }
+

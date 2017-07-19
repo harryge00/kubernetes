@@ -2660,6 +2660,12 @@ func GetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.Ope
 								Format:      "",
 							},
 						},
+						"serviceProbe": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Periodic probe of container sclaeinfo. Container will be restarted if the probe fails. Cannot be updated.",
+								Ref:         ref("k8s.io/kubernetes/pkg/api/v1.Probe"),
+							},
+						},
 					},
 					Required: []string{"name"},
 				},
@@ -2933,8 +2939,22 @@ func GetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.Ope
 								Format:      "",
 							},
 						},
+						"isScale": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Indicate whether the container can be scale down",
+								Type:        []string{"boolean"},
+								Format:      "",
+							},
+						},
+						"workLoad": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Indicate the app report workload for the container",
+								Type:        []string{"integer"},
+								Format:      "int32",
+							},
+						},
 					},
-					Required: []string{"name", "ready", "restartCount", "image", "imageID"},
+					Required: []string{"name", "ready", "restartCount", "image", "imageID", "isScale", "workLoad"},
 				},
 			},
 			Dependencies: []string{
@@ -6728,7 +6748,15 @@ func GetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.Ope
 								Format:      "",
 							},
 						},
+						"isScale": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Information get from application to indicating whether to scale up or scale down the number of pods",
+								Type:        []string{"boolean"},
+								Format:      "",
+							},
+						},
 					},
+					Required: []string{"isScale"},
 				},
 			},
 			Dependencies: []string{

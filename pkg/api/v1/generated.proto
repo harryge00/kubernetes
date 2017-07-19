@@ -514,6 +514,12 @@ message Container {
   // Default is false.
   // +optional
   optional bool tty = 18;
+
+  // Periodic probe of container sclaeinfo.
+  // Container will be restarted if the probe fails.
+  // Cannot be updated.
+  // +optional
+  optional Probe serviceProbe = 21;
 }
 
 // Describe a container image
@@ -656,6 +662,12 @@ message ContainerStatus {
   // More info: http://kubernetes.io/docs/user-guide/container-environment#container-information
   // +optional
   optional string containerID = 8;
+
+  // Indicate whether the container can be scale down
+  optional bool isScale = 9;
+
+  // Indicate the app report workload for the container
+  optional int32 workLoad = 10;
 }
 
 // DaemonEndpoint contains information about a single Daemon endpoint.
@@ -2751,6 +2763,9 @@ message PodStatus {
   // More info: https://github.com/kubernetes/kubernetes/blob/master/docs/design/resource-qos.md
   // +optional
   optional string qosClass = 9;
+
+  // Information get from application to indicating whether to scale up or scale down the number of pods
+  optional bool isScale = 11;
 }
 
 // PodStatusResult is a wrapper for PodStatus returned by kubelet that can be encode/decoded

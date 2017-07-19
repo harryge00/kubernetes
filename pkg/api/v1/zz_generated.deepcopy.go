@@ -604,6 +604,13 @@ func DeepCopy_v1_Container(in interface{}, out interface{}, c *conversion.Cloner
 				return err
 			}
 		}
+		if in.ServiceProbe != nil {
+			in, out := &in.ServiceProbe, &out.ServiceProbe
+			*out = new(Probe)
+			if err := DeepCopy_v1_Probe(*in, *out, c); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 }

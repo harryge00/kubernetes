@@ -1723,6 +1723,12 @@ type Container struct {
 	// Default is false.
 	// +optional
 	TTY bool `json:"tty,omitempty" protobuf:"varint,18,opt,name=tty"`
+
+	// Periodic probe of container sclaeinfo.
+	// Container will be restarted if the probe fails.
+	// Cannot be updated.
+	// +optional
+	ServiceProbe *Probe `json:"serviceProbe,omitempty" protobuf:"bytes,21,opt,name=serviceProbe"`
 }
 
 // Handler defines a specific action that should be taken
@@ -1858,6 +1864,10 @@ type ContainerStatus struct {
 	// More info: http://kubernetes.io/docs/user-guide/container-environment#container-information
 	// +optional
 	ContainerID string `json:"containerID,omitempty" protobuf:"bytes,8,opt,name=containerID"`
+	// Indicate whether the container can be scale down
+	IsScale bool `json:"isScale" protobuf:"varint,9,opt,name=isScale"`
+	// Indicate the app report workload for the container
+	WorkLoad int32 `json:"workLoad" protobuf:"varint,10,opt,name=workLoad"`
 }
 
 // PodPhase is a label for the condition of a pod at the current time.
@@ -2479,6 +2489,9 @@ type PodStatus struct {
 	// More info: https://github.com/kubernetes/kubernetes/blob/master/docs/design/resource-qos.md
 	// +optional
 	QOSClass PodQOSClass `json:"qosClass,omitempty" protobuf:"bytes,9,rep,name=qosClass"`
+
+	// Information get from application to indicating whether to scale up or scale down the number of pods
+	IsScale bool `json:"isScale" protobuf:"varint,11,rep,name=isScale"`
 }
 
 // PodStatusResult is a wrapper for PodStatus returned by kubelet that can be encode/decoded

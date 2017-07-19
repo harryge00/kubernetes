@@ -123,6 +123,12 @@ func SetObjectDefaults_Job(in *Job) {
 				}
 			}
 		}
+		if a.ServiceProbe != nil {
+			api_v1.SetDefaults_Probe(a.ServiceProbe)
+			if a.ServiceProbe.Handler.HTTPGet != nil {
+				api_v1.SetDefaults_HTTPGetAction(a.ServiceProbe.Handler.HTTPGet)
+			}
+		}
 	}
 	for i := range in.Spec.Template.Spec.Containers {
 		a := &in.Spec.Template.Spec.Containers[i]
@@ -163,6 +169,12 @@ func SetObjectDefaults_Job(in *Job) {
 				if a.Lifecycle.PreStop.HTTPGet != nil {
 					api_v1.SetDefaults_HTTPGetAction(a.Lifecycle.PreStop.HTTPGet)
 				}
+			}
+		}
+		if a.ServiceProbe != nil {
+			api_v1.SetDefaults_Probe(a.ServiceProbe)
+			if a.ServiceProbe.Handler.HTTPGet != nil {
+				api_v1.SetDefaults_HTTPGetAction(a.ServiceProbe.Handler.HTTPGet)
 			}
 		}
 	}

@@ -1543,6 +1543,9 @@ type Container struct {
 	StdinOnce bool
 	// +optional
 	TTY bool
+	// Periodic probe of container sclaeinfo.
+	// +optional
+	ServiceProbe  *Probe
 }
 
 // Handler defines a specific action that should be taken
@@ -1647,6 +1650,10 @@ type ContainerStatus struct {
 	ImageID      string
 	// +optional
 	ContainerID string
+	// Indicate whether the container can be scale down
+	IsScale bool
+	//Indicate the app report workload for the container
+	WorkLoad int32 `json:"workLoad" protobuf:"varint,10,opt,name=workLoad"`
 }
 
 // PodPhase is a label for the condition of a pod at the current time.
@@ -2203,6 +2210,8 @@ type PodStatus struct {
 	// when we have done this.
 	// +optional
 	ContainerStatuses []ContainerStatus
+	// Information get from application to indicating whether to scale up or scale down the number of pods
+	IsScale bool
 }
 
 // PodStatusResult is a wrapper for PodStatus returned by kubelet that can be encode/decoded

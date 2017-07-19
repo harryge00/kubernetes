@@ -387,7 +387,7 @@ func (x *NodeMetrics) CodecEncodeSelf(e *codec1978.Encoder) {
 				yyn35 = true
 				goto LABEL35
 			}
-			LABEL35:
+		LABEL35:
 			if yyr2 || yy2arr2 {
 				if yyn35 {
 					r.EncodeNil()
@@ -444,7 +444,7 @@ func (x *NodeMetrics) CodecEncodeSelf(e *codec1978.Encoder) {
 				yyn38 = true
 				goto LABEL38
 			}
-			LABEL38:
+		LABEL38:
 			if yyr2 || yy2arr2 {
 				if yyn38 {
 					r.EncodeNil()
@@ -2285,7 +2285,7 @@ func (x *PodMetrics) CodecEncodeSelf(e *codec1978.Encoder) {
 				yyn35 = true
 				goto LABEL35
 			}
-			LABEL35:
+		LABEL35:
 			if yyr2 || yy2arr2 {
 				if yyn35 {
 					r.EncodeNil()
@@ -2342,7 +2342,7 @@ func (x *PodMetrics) CodecEncodeSelf(e *codec1978.Encoder) {
 				yyn38 = true
 				goto LABEL38
 			}
-			LABEL38:
+		LABEL38:
 			if yyr2 || yy2arr2 {
 				if yyn38 {
 					r.EncodeNil()

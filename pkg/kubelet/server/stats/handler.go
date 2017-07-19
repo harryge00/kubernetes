@@ -35,6 +35,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/volume"
+	kubelettype "k8s.io/kubernetes/pkg/kubelet/types"
 )
 
 // Host methods required by stats handlers.
@@ -183,6 +184,37 @@ func (h *handler) handleSystemContainer(request *restful.Request, response *rest
 			return
 		}
 	}
+/*
+	if _, ok := stats[containerName]; ok {
+		podName,  ok1:= stats[containerName].Spec.Labels[kubelettype.KubernetesPodNameLabel]
+		nameSpace, ok2 := stats[containerName].Spec.Labels[kubelettype.KubernetesPodNamespaceLabel]
+		containername, ok3 := stats[containerName].Spec.Labels[kubelettype.KubernetesContainerNameLabel ]
+		if ok1&& ok2 && ok3 {
+			pod, ok := h.provider.GetPodByName(nameSpace, podName)
+			if !ok {
+				glog.V(4).Infof("Pod: %s not found in namespace: %s", podName, nameSpace)
+				response.WriteError(http.StatusNotFound, kubecontainer.ErrContainerNotFound)
+				return
+			}
+			var mapkey string = "workLoad"
+			for i,cs := range pod.Status.ContainerStatuses {
+				if cs.Name == containername {
+					k := len(stats[containerName].Stats) - 1
+					for j := 0; j < k; j++ {
+						stats[containerName].Stats[j].CustomMetrics[mapkey] = cadvisorapi.MetricVal{
+							//Label: ,
+							//Timestamp: time.Now(),
+							//IntValue: int64(pod.Status.ContainerStatuses[i].WorkLoad),
+							IntValue: int64(WorkloadCache[j]),
+							//FloatValue:
+						}
+					}
+					break
+				}
+			}
+		}
+	}
+*/
 	writeResponse(response, stats)
 }
 
@@ -227,6 +259,29 @@ func (h *handler) handlePodContainer(request *restful.Request, response *restful
 		handleError(response, fmt.Sprintf("%s %v", request.Request.URL.String(), query), err)
 		return
 	}
+/*
+	for i, _ := pod.Spec.Containers {
+		if !pod.Spec.Containers[i].ServiceProbe {
+			if pod.Spec.Containers[i].Name ==  params["containerName"]
+		}
+	}
+*/
+/*	for i  := range pod.Status.ContainerStatuses {
+		if pod.Status.ContainerStatuses[i].Name == params["containerName"]  {
+			stats.Spec.CustomMetrics[i].Name = "WorkLoad"
+			stats.Spec.CustomMetrics[i].Type = cadvisorapi.MetricGauge
+			stats.Spec.CustomMetrics[i].Format = cadvisorapi.IntType
+			//stats.Spec.CustomMetrics[i].Units =
+			var mapkey  string="workLoad"
+			stats.Stats[i].CustomMetrics[mapkey] = cadvisorapi.MetricVal{
+			//	Label: ,
+				Timestamp: time.Now(),
+				IntValue: int64(pod.Status.ContainerStatuses[i].WorkLoad),
+			//	FloatValue:
+			}
+		}
+	}
+*/
 	writeResponse(response, stats)
 }
 

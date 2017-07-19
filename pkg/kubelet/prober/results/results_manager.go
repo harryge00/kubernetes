@@ -63,6 +63,8 @@ type Update struct {
 	ContainerID kubecontainer.ContainerID
 	Result      Result
 	PodUID      types.UID
+//	Workload int32
+//	IsScale  bool
 }
 
 // Manager implementation.
