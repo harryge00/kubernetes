@@ -99,6 +99,15 @@ func IsPodReady(pod *Pod) bool {
 	return IsPodReadyConditionTrue(pod.Status)
 }
 
+func IsPodReadyConditionCompleted(status PodStatus) bool {
+	condition := GetPodReadyCondition(status)
+	return condition != nil && condition.Status == ConditionFalse && condition.Reason == "PodCompleted"
+}
+
+func IsPodCompleted(pod *Pod) bool {
+	return IsPodReadyConditionCompleted(pod.Status)
+}
+
 // IsPodReady retruns true if a pod is ready; false otherwise.
 func IsPodReadyConditionTrue(status PodStatus) bool {
 	condition := GetPodReadyCondition(status)

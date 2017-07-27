@@ -710,7 +710,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	}
 	klet.imageManager = imageManager
 
-	klet.statusManager = status.NewManager(klet.kubeClient, klet.podManager, klet)
+	klet.statusManager = status.NewManager(klet.kubeClient, klet.podManager, klet, klet.recorder)
 
 	klet.probeManager = prober.NewManager(
 		klet.statusManager,

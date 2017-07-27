@@ -362,7 +362,10 @@ func LogSymlink(containerLogsDir, podFullName, containerName, dockerId string) s
 func getDockerClient(dockerEndpoint string) (*dockerapi.Client, error) {
 	if len(dockerEndpoint) > 0 {
 		glog.Infof("Connecting to docker on %s", dockerEndpoint)
-		return dockerapi.NewClient(dockerEndpoint, "", nil, nil)
+		header := map[string]string{
+			"User-Agent": "kubelet",
+		}
+		return dockerapi.NewClient(dockerEndpoint, "", nil, header)
 	}
 	return dockerapi.NewEnvClient()
 }

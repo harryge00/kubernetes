@@ -44,6 +44,7 @@ import (
 	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	clientretry "k8s.io/kubernetes/pkg/client/retry"
+	util "k8s.io/kubernetes/pkg/util/podchanges"
 
 	"github.com/golang/glog"
 )
@@ -562,6 +563,13 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 			return nil
 		}
 		glog.V(4).Infof("Controller %v created pod %v", accessor.GetName(), newPod.Name)
+		if controllerRef.Kind == "ReplicationController" {
+			util.RecordRCEvent(r.Recorder , controllerRef.Name, newPod.Namespace ,newPod.Name, "RcPodAdd", "RcPodAdd")
+		}
+		if controllerRef.Kind == "Job" {
+			util.RecordJobEvent(r.Recorder , controllerRef.Name, newPod.Namespace ,newPod.Name, "JobPodAdd", "JobPodAdd")
+		}
+
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulCreatePodReason, "Created pod: %v", newPod.Name)
 	}
 	return nil
@@ -572,12 +580,25 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 	if err != nil {
 		return fmt.Errorf("object does not have ObjectMeta, %v", err)
 	}
+	pod, err := r.KubeClient.Core().Pods(namespace).Get(podID, metav1.GetOptions{})
+	if err != nil {
+		glog.V(2).Infof("Controller %v get pod %v/%v Failed", accessor.GetName(), namespace, podID)
+		pod = nil
+	}
 	glog.V(2).Infof("Controller %v deleting pod %v/%v", accessor.GetName(), namespace, podID)
 	if err := r.KubeClient.Core().Pods(namespace).Delete(podID, nil); err != nil {
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedDeletePodReason, "Error deleting: %v", err)
 		return fmt.Errorf("unable to delete pods: %v", err)
 	} else {
-		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
+		if pod != nil && len(pod.OwnerReferences) > 0 {
+			if pod.OwnerReferences[0].Kind == "ReplicationController" {
+				util.RecordRCEvent(r.Recorder, accessor.GetName() , namespace, podID, "RcPodDelete", "RcPodDelete")
+			}
+			if pod.OwnerReferences[0].Kind == "Job" {
+				util.RecordJobEvent(r.Recorder, accessor.GetName(), namespace, podID, "JobPodDelete", "JobPodDelete")
+			}
+			r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
+		}
 	}
 	return nil
 }
