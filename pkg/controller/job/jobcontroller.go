@@ -42,6 +42,7 @@ import (
 	corelisters "k8s.io/kubernetes/pkg/client/listers/core/v1"
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/util/metrics"
+	"k8s.io/kubernetes/pkg/util/podchanges"
 
 	"github.com/golang/glog"
 )
@@ -413,6 +414,12 @@ func (jm *JobController) syncJob(key string) error {
 		if err := jm.updateHandler(&job); err != nil {
 			return err
 		}
+		if IsJobSuccessed(&job) {
+			podchanges.RecordJobEvent(jm.recorder, job.Name, job.Namespace, "", "JobComplete", "JobComplete")
+		} else if IsJobFailed(&job) {
+			podchanges.RecordJobEvent(jm.recorder, job.Name, job.Namespace, "", "JobFailed", "JobFailed")
+		}
+
 	}
 	return manageJobErr
 }
@@ -519,13 +526,24 @@ func (jm *JobController) manageJob(activePods []*v1.Pod, succeeded int32, job *b
 		errCh = make(chan error, diff)
 		glog.V(4).Infof("Too few pods running job %q, need %d, creating %d", jobKey, wantActive, diff)
 
+		var controllerBool = true
+		var blockOwnerDeletion = true
+		controllerRef := &metav1.OwnerReference{
+			APIVersion: "v1",
+			Kind:       "Job",
+			Name:       job.Name,
+			UID:        job.UID,
+			Controller: &controllerBool,
+			BlockOwnerDeletion: &blockOwnerDeletion,
+		}
+
 		active += diff
 		wait := sync.WaitGroup{}
 		wait.Add(int(diff))
 		for i := int32(0); i < diff; i++ {
 			go func() {
 				defer wait.Done()
-				if err := jm.podControl.CreatePods(job.Namespace, &job.Spec.Template, job); err != nil {
+				if err := jm.podControl.CreatePodsWithControllerRef(job.Namespace, &job.Spec.Template, job, controllerRef); err != nil {
 					defer utilruntime.HandleError(err)
 					// Decrement the expected number of creates because the informer won't observe this pod
 					glog.V(2).Infof("Failed creation, decrementing expectations for job %q/%q", job.Namespace, job.Name)
@@ -579,4 +597,23 @@ func (o byCreationTimestamp) Less(i, j int) bool {
 		return o[i].Name < o[j].Name
 	}
 	return o[i].CreationTimestamp.Before(o[j].CreationTimestamp)
+}
+
+
+func IsJobSuccessed(j *batch.Job) bool {
+	for _, c := range j.Status.Conditions {
+		if (c.Type == batch.JobComplete) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsJobFailed(j *batch.Job) bool {
+	for _, c := range  j.Status.Conditions {
+		if (c.Type == batch.JobFailed) {
+			return true
+		}
+	}
+	return false
 }

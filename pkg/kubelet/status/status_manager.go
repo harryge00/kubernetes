@@ -28,6 +28,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	util "k8s.io/kubernetes/pkg/util/podchanges"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubernetes/pkg/api"
@@ -68,6 +70,8 @@ type manager struct {
 	// apiStatusVersions must only be accessed from the sync thread.
 	apiStatusVersions map[types.UID]uint64
 	podDeletionSafety PodDeletionSafetyProvider
+
+	recorder record.EventRecorder
 }
 
 // PodStatusProvider knows how to provide status for a pod.  It's intended to be used by other components
@@ -110,7 +114,7 @@ type Manager interface {
 
 const syncPeriod = 10 * time.Second
 
-func NewManager(kubeClient clientset.Interface, podManager kubepod.Manager, podDeletionSafety PodDeletionSafetyProvider) Manager {
+func NewManager(kubeClient clientset.Interface, podManager kubepod.Manager, podDeletionSafety PodDeletionSafetyProvider, recorder record.EventRecorder) Manager {
 	return &manager{
 		kubeClient:        kubeClient,
 		podManager:        podManager,
@@ -118,6 +122,7 @@ func NewManager(kubeClient clientset.Interface, podManager kubepod.Manager, podD
 		podStatusChannel:  make(chan podStatusSyncRequest, 1000), // Buffer up to 1000 statuses
 		apiStatusVersions: make(map[types.UID]uint64),
 		podDeletionSafety: podDeletionSafety,
+		recorder:          recorder,
 	}
 }
 
@@ -434,6 +439,7 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 			m.deletePodStatus(uid)
 			return
 		}
+		tmpPodStatus := pod.Status
 		pod.Status = status.status
 		if err := podutil.SetInitContainersStatusesAnnotations(pod); err != nil {
 			glog.Error(err)
@@ -447,6 +453,34 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 				// We don't handle graceful deletion of mirror pods.
 				return
 			}
+			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
+				ref := pod.OwnerReferences[0]
+				if ref.Kind == "ReplicationController" {
+					if v1.IsPodReadyConditionTrue(tmpPodStatus) != v1.IsPodReadyConditionTrue(status.status) {
+						if v1.IsPodReady(pod) {
+							util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
+						} else {
+							util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
+						}
+					}
+				}
+				if ref.Kind == "Job" {
+					if v1.IsPodReadyConditionTrue(tmpPodStatus) != v1.IsPodReadyConditionTrue(status.status) {
+						if v1.IsPodReady(pod) {
+							util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
+						} else if tmpPodStatus.Phase != pod.Status.Phase && pod.Status.Phase == v1.PodPending {
+							util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+						}
+					}
+
+					if tmpPodStatus.Phase != pod.Status.Phase &&
+						pod.Status.Phase != v1.PodRunning &&
+						pod.Status.Phase != v1.PodPending  {
+						util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", string(pod.Status.Phase))
+					}
+				}
+			}
+
 			if !m.podDeletionSafety.OkToDeletePod(pod) {
 				return
 			}
@@ -464,6 +498,27 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 	// We failed to update status, wait for periodic sync to retry.
 	glog.Warningf("Failed to update status for pod %q: %v", format.Pod(pod), err)
 }
+
+
+func IsContainerStatusDiff(oldStatus *api.PodStatus, newStatus *api.PodStatus) bool {
+	for _, old := range oldStatus.ContainerStatuses {
+		if old.ContainerID == "" {
+			continue
+		}
+		for _, new := range newStatus.ContainerStatuses {
+			if new.ContainerID == "" {
+				continue
+			}
+			if old.Name == new.Name {
+				if old.ContainerID != new.ContainerID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 
 // needsUpdate returns whether the status is stale for the given pod UID.
 // This method is not thread safe, and most only be accessed by the sync thread.

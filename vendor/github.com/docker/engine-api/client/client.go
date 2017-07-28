@@ -59,7 +59,12 @@ func NewEnvClient() (*Client, error) {
 	if host == "" {
 		host = DefaultDockerHost
 	}
-	return NewClient(host, os.Getenv("DOCKER_API_VERSION"), client, nil)
+
+	header := map[string]string{
+		"User-Agent": "kubelet",
+	}
+
+	return NewClient(host, os.Getenv("DOCKER_API_VERSION"), client, header)
 }
 
 // NewClient initializes a new API client for the given host and API version.

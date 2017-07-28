@@ -102,24 +102,27 @@ func (c *pods) UpdateStatus(pod *v1.Pod) (result *v1.Pod, err error) {
 
 // Delete takes name of the pod and deletes it. Returns an error if one occurs.
 func (c *pods) Delete(name string, options *meta_v1.DeleteOptions) error {
-	return c.client.Delete().
+	res := c.client.Delete().
 		Namespace(c.ns).
 		Resource("pods").
 		Name(name).
 		Body(options).
 		Do().
 		Error()
+	return res
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *pods) DeleteCollection(options *meta_v1.DeleteOptions, listOptions meta_v1.ListOptions) error {
-	return c.client.Delete().
+	res := c.client.Delete().
 		Namespace(c.ns).
 		Resource("pods").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Body(options).
 		Do().
 		Error()
+	return res
+
 }
 
 // Get takes name of the pod, and returns the corresponding pod object, and an error if there is any.
