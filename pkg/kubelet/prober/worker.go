@@ -29,10 +29,7 @@ import (
 	"encoding/json"
 	"bytes"
 	"k8s.io/kubernetes/pkg/kubelet/workload"
-//	"k8s.io/kubernetes/pkg/kubelet"
-//	"k8s.io/kubernetes/pkg/kubelet/workload/data"
 	cadvisorapi "github.com/google/cadvisor/info/v1"
-//	"k8s.io/kubernetes/pkg/kubelet/workload"
 )
 
 // worker handles the periodic probing of its assigned container. Each worker has a go-routine
@@ -71,8 +68,6 @@ type worker struct {
 
 	// If set, skip probing.
 	onHold bool
-
-//	workloadHandler  runtime.WorkloadHandler
 }
 
 // Creates and starts a new probe worker.
@@ -109,14 +104,6 @@ func newWorker(
 	return w
 }
 
-/*
-func (w *worker) SetWorkload(workloadHandler runtime.WorkloadHandler) {
-	w.workloadHandler = workloadHandler
-}
-*/
-
-// run periodically probes the container.
-//func (w *worker) run( kl *kubelet.Kubelet) {
 func (w *worker) run() {
 	probeTickerPeriod := time.Duration(w.spec.PeriodSeconds) * time.Second
 	probeTicker := time.NewTicker(probeTickerPeriod)
@@ -155,20 +142,6 @@ probeLoop:
 		// Wait for next probe tick.
 		select {
 		case <-w.stopCh:
-/*
-			glog.V(3).Infof("Need delete some workload data if container stopped or killed")
-			var buf bytes.Buffer
-			buf.WriteString(w.pod.Namespace)
-			buf.WriteString("_")
-			buf.WriteString(w.pod.Name)
-			buf.WriteString("_")
-			buf.WriteString(w.container.Name)
-
-			key := buf.String()
-			glog.V(3).Infof("Delete workload data for container: ", key)
-			handler := workload.DefaultMetricsCache
-			defer handler.DeleteWorkLoad(key)
-*/
 			break probeLoop
 		case <-probeTicker.C:
 			// continue
@@ -255,12 +228,13 @@ func (w *worker) doProbe() (keepGoing bool) {
 		return true
 	}
 
+	// Run ServiceProbe, get workload and isScale info, then recorded them
 	handler := workload.DefaultMetricsCache
 	if w.probeType == service && result == results.Success {
 		var scaleinfoIn []byte
 		var scaleinfoOut ScaleInfo
 		scaleinfoIn = []byte(output)
-		//	if err = json.Unmarshal(scaleinfo_in, scaleinfo_out); err != nil {
+
 		if err = json.Unmarshal(scaleinfoIn, &scaleinfoOut); err != nil {
 			glog.V(3).Infof("Response: %+v, errored: %v", scaleinfoIn, err)
 			return true
@@ -278,47 +252,26 @@ func (w *worker) doProbe() (keepGoing bool) {
 		buf.WriteString(w.pod.Name)
 		buf.WriteString("_")
 		buf.WriteString(w.container.Name)
-
 		key := buf.String()
-		glog.V(3).Infof("Unique container name is: %s", key)
-	//	defer handler.DeleteWorkLoad(key)
 
 		for i, _ := range status.ContainerStatuses {
 			if status.ContainerStatuses[i].Name == w.container.Name {
 				status.ContainerStatuses[i].IsScale = c.IsScale
 				status.ContainerStatuses[i].WorkLoad = c.WorkLoad
 
-
-				//value := kubelet.WorkLoadSample{
-/*
-					value :=runtime.WorkLoadSample{
-					WorkLoad: c.WorkLoad,
-					Timestamp:  now,
-					Label: w.container.Name,
-				}
-*/
 				value := cadvisorapi.MetricVal{
 					Label: "workload",
 					Timestamp: now,
 					IntValue: int64(c.WorkLoad),
 				//	FloatValue: ,
 				}
-				glog.V(3).Infof("Sample value for this time is: %+v", value)
-			//	glog.V(3).Infof("WORKLOADHANDLER: %+v", &w.workloadHandler)
 
-				//workload.WriteWorkLoad(key, value)
-			//	w.workloadHandler.RecordWorkLoad(key, value)
-			//	workload.AppWorkload.RecordWorkLoad(key,value)
-			//	data.RecordWorkload(workload.AppWorkload())
-			//	aw := workload.AppWorkload()
-			//	in.RecordWorkload(key, value)
+				// Record the ServiceProbe data for container key
 				handler.RecordWorkLoad(key, value)
-			//	workload.AppWorkload.RecordWorkLoad(key, value)
-				glog.V(3).Infof("Finished Recording Data")
 				break
 			}
 		}
-		glog.V(3).Infof("ServiceProbe Pod status for pod: %v", format.Pod(w.pod))
+
 		w.probeManager.statusManager.SetPodStatus(w.pod, status)
 	}
 
@@ -353,21 +306,3 @@ type ScaleInfo struct {
 	Workload     int32 `json:"workload"`
 	IsScale       bool `json:"isScale"`
 }
-
-
-/*
-type WorkLoadSample struct{
-	WorkLoad int32
-	Timestamp  time.Time
-}
-*/
-/*
-func WriteWorkLoad(key string, value kubelet.WorkLoadSample) {
-	kubelet.Kubelet.RecordWorkLoad(key, value)
-}
-
-func GetWorkLoad() *kubelet.ContainerWorkLoad{
-	return kubelet.Kubelet.GetWorkLoad()
-}
-*/
-
