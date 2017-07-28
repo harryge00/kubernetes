@@ -109,10 +109,7 @@ func (c *pods) UpdateStatus(pod *api.Pod) (result *api.Pod, err error) {
 // Delete takes name of the pod and deletes it. Returns an error if one occurs.
 func (c *pods) Delete(name string, options *v1.DeleteOptions) error {
 	opt := v1.GetOptions{}
-	fmt.Println("fuck begin")
 	pod, err := c.Get(name, opt)
-	fmt.Println(pod, err)
-	fmt.Println("fuck end")
 	res := c.client.Delete().
 		Namespace(c.ns).
 		Resource("pods").
