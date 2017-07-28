@@ -29,6 +29,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/prober/results"
 	"k8s.io/kubernetes/pkg/kubelet/status"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+//	"k8s.io/kubernetes/pkg/kubelet"
+//	"k8s.io/apimachinery/pkg/util/runtime"
+//	"k8s.io/kubernetes/pkg/kubelet/workload"
 )
 
 // Manager manages pod probing. It creates a probe "worker" for every container that specifies a
@@ -39,6 +42,7 @@ import (
 type Manager interface {
 	// AddPod creates new probe workers for every container probe. This should be called for every
 	// pod created.
+	// AddPod(pod *v1.Pod, kl *kubelet.Kubelet)
 	AddPod(pod *v1.Pod)
 
 	// RemovePod handles cleaning up the removed pod state, including terminating probe workers and
@@ -55,6 +59,8 @@ type Manager interface {
 
 	// Start starts the Manager sync loops.
 	Start()
+
+//	SetWorkload(workloadHandler runtime.WorkloadHandler)
 }
 
 type manager struct {
@@ -77,6 +83,8 @@ type manager struct {
 
 	// prober executes the probe actions.
 	prober *prober
+
+//	workloadHandler runtime.WorkloadHandler
 }
 
 func NewManager(
@@ -96,7 +104,11 @@ func NewManager(
 		workers:          make(map[probeKey]*worker),
 	}
 }
-
+/*
+func(m *manager) SetWorkload(workloadHandler runtime.WorkloadHandler) {
+	m.workloadHandler = workloadHandler
+}
+*/
 // Start syncing probe status. This should only be called once.
 func (m *manager) Start() {
 	// Start syncing readiness.
@@ -133,6 +145,7 @@ func (t probeType) String() string {
 	}
 }
 
+//func (m *manager) AddPod(pod *v1.Pod, kl *kubelet.Kubelet) {
 func (m *manager) AddPod(pod *v1.Pod) {
 	m.workerLock.Lock()
 	defer m.workerLock.Unlock()
@@ -149,6 +162,7 @@ func (m *manager) AddPod(pod *v1.Pod) {
 				return
 			}
 			w := newWorker(m, readiness, pod, c)
+//			w.SetWorkload(m.workloadHandler)
 			m.workers[key] = w
 			go w.run()
 		}
@@ -186,7 +200,7 @@ func (m *manager) RemovePod(pod *v1.Pod) {
 	key := probeKey{podUID: pod.UID}
 	for _, c := range pod.Spec.Containers {
 		key.containerName = c.Name
-		for _, probeType := range [...]probeType{readiness, liveness} {
+		for _, probeType := range [...]probeType{readiness, liveness, service} {
 			key.probeType = probeType
 			if worker, ok := m.workers[key]; ok {
 				worker.stop()

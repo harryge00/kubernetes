@@ -308,6 +308,7 @@ func autoConvert_v1alpha1_KubeletConfiguration_To_componentconfig_KubeletConfigu
 	if err := v1.Convert_Pointer_bool_To_bool(&in.RegisterNode, &out.RegisterNode, s); err != nil {
 		return err
 	}
+	out.SampleWindow = in.SampleWindow
 	out.ClusterDomain = in.ClusterDomain
 	out.MasterServiceNamespace = in.MasterServiceNamespace
 	out.ClusterDNS = *(*[]string)(unsafe.Pointer(&in.ClusterDNS))
@@ -499,6 +500,7 @@ func autoConvert_componentconfig_KubeletConfiguration_To_v1alpha1_KubeletConfigu
 	if err := v1.Convert_bool_To_Pointer_bool(&in.RegisterNode, &out.RegisterNode, s); err != nil {
 		return err
 	}
+	out.SampleWindow = in.SampleWindow
 	out.ClusterDomain = in.ClusterDomain
 	out.MasterServiceNamespace = in.MasterServiceNamespace
 	if in.ClusterDNS == nil {

@@ -287,6 +287,8 @@ type KubeletConfiguration struct {
 	OOMScoreAdj *int32 `json:"oomScoreAdj"`
 	// registerNode enables automatic registration with the apiserver.
 	RegisterNode *bool `json:"registerNode"`
+	// sampleWindow set the number of workload for each container to retain in memory
+	SampleWindow int32 `json:"sampleWindow"`
 	// clusterDomain is the DNS domain for this cluster. If set, kubelet will
 	// configure all containers to search this domain in addition to the
 	// host's search domains.

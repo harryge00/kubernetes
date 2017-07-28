@@ -36,6 +36,8 @@ import (
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/volume"
 	kubelettype "k8s.io/kubernetes/pkg/kubelet/types"
+	"bytes"
+	"k8s.io/kubernetes/pkg/kubelet/workload"
 )
 
 // Host methods required by stats handlers.
@@ -165,14 +167,18 @@ func (h *handler) handleSummary(request *restful.Request, response *restful.Resp
 
 // Handles non-kubernetes container stats requests to /stats/container/
 func (h *handler) handleSystemContainer(request *restful.Request, response *restful.Response) {
+
 	query, err := parseStatsRequest(request)
 	if err != nil {
 		handleError(response, "/stats/container", err)
 		return
 	}
+	glog.V(3).Infof("QUERY is: %+v ", query)
+	glog.V(3).Infof("QUERY.CONTAINER NAME is: ", query.ContainerName)
 
 	// Non-Kubernetes container stats.
 	containerName := path.Join("/", query.ContainerName)
+	glog.V(3).Infof("CONTAINER NAME is: ", containerName)
 	stats, err := h.provider.GetRawContainerInfo(
 		containerName, query.cadvisorRequest(), query.Subcontainers)
 	if err != nil {
@@ -184,37 +190,77 @@ func (h *handler) handleSystemContainer(request *restful.Request, response *rest
 			return
 		}
 	}
-/*
-	if _, ok := stats[containerName]; ok {
-		podName,  ok1:= stats[containerName].Spec.Labels[kubelettype.KubernetesPodNameLabel]
-		nameSpace, ok2 := stats[containerName].Spec.Labels[kubelettype.KubernetesPodNamespaceLabel]
-		containername, ok3 := stats[containerName].Spec.Labels[kubelettype.KubernetesContainerNameLabel ]
-		if ok1&& ok2 && ok3 {
-			pod, ok := h.provider.GetPodByName(nameSpace, podName)
+
+	for key,v := range stats {
+		glog.V(3).Infof("MAPk is: %+v ", key)
+		nn := v.Spec.Labels[kubelettype.KubernetesPodNamespaceLabel]
+		pn := v.Spec.Labels[kubelettype.KubernetesPodNameLabel]
+		cn := v.Spec.Labels[kubelettype.KubernetesContainerNameLabel]
+
+		if nn != "" && pn != "" && cn != "" {
+			glog.V(3).Infof("CN : %s is: %+v ", cn, stats[key])
+			var buf bytes.Buffer
+			buf.WriteString(nn)
+			buf.WriteString("_")
+			buf.WriteString(pn)
+			buf.WriteString("_")
+			buf.WriteString(cn)
+
+			mapkey := buf.String()
+
+			pod, ok := h.provider.GetPodByName(nn, pn)
 			if !ok {
-				glog.V(4).Infof("Pod: %s not found in namespace: %s", podName, nameSpace)
-				response.WriteError(http.StatusNotFound, kubecontainer.ErrContainerNotFound)
-				return
+				glog.V(4).Infof("Pod: %s not found in namespace: %s", pn, nn)
+				//response.WriteError(http.StatusNotFound, kubecontainer.ErrContainerNotFound)
+				continue
 			}
-			var mapkey string = "workLoad"
-			for i,cs := range pod.Status.ContainerStatuses {
-				if cs.Name == containername {
-					k := len(stats[containerName].Stats) - 1
-					for j := 0; j < k; j++ {
-						stats[containerName].Stats[j].CustomMetrics[mapkey] = cadvisorapi.MetricVal{
-							//Label: ,
-							//Timestamp: time.Now(),
-							//IntValue: int64(pod.Status.ContainerStatuses[i].WorkLoad),
-							IntValue: int64(WorkloadCache[j]),
-							//FloatValue:
+
+			ha := workload.DefaultMetricsCache
+			for _,cs := range pod.Status.ContainerStatuses {
+				if cs.Name == cn {
+					glog.V(4).Infof("Find the right Container: %s", cs.Name)
+					workLoad := ha.GetWorkLoad(mapkey)
+					if workLoad == nil {
+						glog.V(4).Infof("No workload data for: %s", mapkey)
+						break
+					}
+
+					k := len(stats[key].Stats)
+					if len(workLoad) != 0 {
+						length := len(workLoad)
+						count := length
+						if k < length {
+							count = k
+							workLoad = workLoad[(length - k):length]
 						}
+
+						for j := 0; j < count; j++ {
+							glog.V(4).Infof("ORIGIN SLICE is: %+v ", stats[key].Stats[j].CustomMetrics[mapkey])
+							stats[key].Stats[j].CustomMetrics = make(map[string][]cadvisorapi.MetricVal)
+							glog.V(4).Infof("IIII  Count is ", count, " MAPKEY is", mapkey)
+							stats[key].Stats[j].CustomMetrics[mapkey] = append(stats[key].Stats[j].CustomMetrics[mapkey], workLoad[j])
+							glog.V(4).Infof("JJJJ")
+						}
+						glog.V(4).Infof("The latest Container Stats is: %+v }", stats[key].Stats)
 					}
 					break
 				}
 			}
 		}
 	}
-*/
+
+	for k1,vx := range stats {
+		glog.V(3).Infof("CONTAINERINFO FOR KEY %s, stats's length: %d", k1, len(vx.Stats))
+		for _,sv := range vx.Stats {
+			glog.V(3).Infof("NEWSTATSIS FOR KEY %s is  %+v", k1, *sv)
+		}
+	}
+
+	glog.V(6).Infof("DEBUG: stats: %+v", stats)
+
+	body, _ := json.Marshal(stats)
+	glog.V(6).Infof("DEBUG: stats's body: %s", []byte(body))
+
 	writeResponse(response, stats)
 }
 
@@ -259,29 +305,64 @@ func (h *handler) handlePodContainer(request *restful.Request, response *restful
 		handleError(response, fmt.Sprintf("%s %v", request.Request.URL.String(), query), err)
 		return
 	}
-/*
-	for i, _ := pod.Spec.Containers {
-		if !pod.Spec.Containers[i].ServiceProbe {
-			if pod.Spec.Containers[i].Name ==  params["containerName"]
-		}
-	}
-*/
-/*	for i  := range pod.Status.ContainerStatuses {
-		if pod.Status.ContainerStatuses[i].Name == params["containerName"]  {
-			stats.Spec.CustomMetrics[i].Name = "WorkLoad"
-			stats.Spec.CustomMetrics[i].Type = cadvisorapi.MetricGauge
-			stats.Spec.CustomMetrics[i].Format = cadvisorapi.IntType
-			//stats.Spec.CustomMetrics[i].Units =
-			var mapkey  string="workLoad"
-			stats.Stats[i].CustomMetrics[mapkey] = cadvisorapi.MetricVal{
-			//	Label: ,
-				Timestamp: time.Now(),
-				IntValue: int64(pod.Status.ContainerStatuses[i].WorkLoad),
-			//	FloatValue:
+
+	glog.V(4).Infof("ContainerName is: %v", params["containerName"])
+	for _, cs  := range pod.Status.ContainerStatuses {
+		glog.V(4).Infof("Get Container Statues")
+		glog.V(4).Infof("cs.Name is:", cs.Name)
+		glog.V(4).Infof("params_containerName:", params["containerName"])
+		if cs.Name == params["containerName"]  {
+			glog.V(4).Infof("DGet Container Statues")
+			var buf bytes.Buffer
+			buf.WriteString(params["namespace"])
+			buf.WriteString("_")
+			buf.WriteString( params["podName"])
+			buf.WriteString("_")
+			buf.WriteString( params["containerName"])
+			mapkey := buf.String()
+
+			glog.V(4).Infof("Do Metrics003")
+			ha := workload.DefaultMetricsCache
+			glog.V(4).Infof("Unique Name: %s ", mapkey)
+			glog.V(3).Infof("Container Workload000: %+v", ha.GetWorkLoad(mapkey))
+			k := len(stats.Stats)
+			glog.V(4).Infof("stat.Stats is: %+v", stats.Stats)
+			glog.V(4).Infof("Stats length is: ", k)
+			workLoad := ha.GetWorkLoad(mapkey)
+			length :=len(workLoad)
+			glog.V(4).Infof("WorkLoad length is: ", k)
+			count := length
+			if k < length {
+				count = k
+				workLoad = workLoad[(length - k):length]
 			}
+
+			glog.V(4).Infof("Count is: ", k)
+
+			glog.V(3).Infof("Get WorkLoad is: %+v", workLoad)
+			for j := 0; j <k; j++ {
+				glog.V(3).Infof("INITIALATING")
+				stats.Stats[j].CustomMetrics = make(map[string][]cadvisorapi.MetricVal, 256)
+			}
+
+			for j := 0; j <k; j++ {
+				glog.V(3).Infof("After InitialCustomMetric is: %+v", stats.Stats[j].CustomMetrics)
+				glog.V(3).Infof("SLICE CAP: %+v", cap(stats.Stats[j].CustomMetrics[mapkey]))
+			}
+
+			for j := 0; j < count; j++ {
+				glog.V(4).Infof("Do Metrics004")
+			//	stats.Stats[j].CustomMetrics[mapkey] = append(stats.Stats[j].CustomMetrics[mapkey], workLoad[j])
+				stats.Stats[j].CustomMetrics[mapkey] = append(stats.Stats[j].CustomMetrics[mapkey], workLoad[j])
+				glog.V(4).Infof("Do Metrics005")
+			}
+			glog.V(4).Infof("CustomMetrics Key: %s }", mapkey)
+			glog.V(4).Infof("The latest Container Stats is: %+v }", stats.Stats)
+
+			break
 		}
 	}
-*/
+
 	writeResponse(response, stats)
 }
 
