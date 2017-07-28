@@ -527,12 +527,14 @@ func (jm *JobController) manageJob(activePods []*v1.Pod, succeeded int32, job *b
 		glog.V(4).Infof("Too few pods running job %q, need %d, creating %d", jobKey, wantActive, diff)
 
 		var controllerBool = true
+		var blockOwnerDeletion = true
 		controllerRef := &metav1.OwnerReference{
 			APIVersion: "v1",
 			Kind:       "Job",
 			Name:       job.Name,
 			UID:        job.UID,
 			Controller: &controllerBool,
+			BlockOwnerDeletion: &blockOwnerDeletion,
 		}
 
 		active += diff
