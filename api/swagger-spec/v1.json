@@ -19202,6 +19202,10 @@
      "tty": {
       "type": "boolean",
       "description": "Whether this container should allocate a TTY for itself, also requires 'stdin' to be true. Default is false."
+     },
+     "serviceProbe": {
+      "$ref": "v1.Probe",
+      "description": "Periodic probe of container sclaeinfo. Container will be restarted if the probe fails. Cannot be updated."
      }
     }
    },
@@ -19873,6 +19877,9 @@
    "v1.PodStatus": {
     "id": "v1.PodStatus",
     "description": "PodStatus represents information about the status of a pod. Status may trail the actual state of a system.",
+    "required": [
+     "isScale"
+    ],
     "properties": {
      "phase": {
       "type": "string",
@@ -19922,6 +19929,10 @@
      "qosClass": {
       "type": "string",
       "description": "The Quality of Service (QOS) classification assigned to the pod based on resource requirements See PodQOSClass type for available QOS classes More info: https://github.com/kubernetes/kubernetes/blob/master/docs/design/resource-qos.md"
+     },
+     "isScale": {
+      "type": "boolean",
+      "description": "Information get from application to indicating whether to scale up or scale down the number of pods"
      }
     }
    },
@@ -19967,7 +19978,9 @@
      "ready",
      "restartCount",
      "image",
-     "imageID"
+     "imageID",
+     "isScale",
+     "workLoad"
     ],
     "properties": {
      "name": {
@@ -20002,6 +20015,15 @@
      "containerID": {
       "type": "string",
       "description": "Container's ID in the format 'docker://\u003ccontainer_id\u003e'. More info: http://kubernetes.io/docs/user-guide/container-environment#container-information"
+     },
+     "isScale": {
+      "type": "boolean",
+      "description": "Indicate whether the container can be scale down"
+     },
+     "workLoad": {
+      "type": "integer",
+      "format": "int32",
+      "description": "Indicate the app report workload for the container"
      }
     }
    },

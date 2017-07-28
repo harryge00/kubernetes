@@ -410,6 +410,8 @@ type PodControlInterface interface {
 	DeletePod(namespace string, podID string, object runtime.Object) error
 	// PatchPod patches the pod.
 	PatchPod(namespace, name string, data []byte) error
+	// GetPod get the pod according to the namespace and podName.
+	GetPod(namespace string, podName string) (*v1.Pod, error)
 }
 
 // RealPodControl is the default implementation of PodControlInterface.
@@ -603,6 +605,19 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 	return nil
 }
 
+func (r RealPodControl) GetPod(namespace string, podName string) (*v1.Pod, error) {
+	if namespace == "" || podName == "" {
+		return nil, fmt.Errorf("param is error")
+	}
+
+	pod, err := r.KubeClient.Core().Pods(namespace).Get(podName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("unable to get pod %s, due to %v", namespace+podName, err)
+	}
+
+	return pod, nil
+}
+
 type FakePodControl struct {
 	sync.Mutex
 	Templates      []v1.PodTemplateSpec
@@ -622,6 +637,10 @@ func (f *FakePodControl) PatchPod(namespace, name string, data []byte) error {
 		return f.Err
 	}
 	return nil
+}
+
+func (f *FakePodControl) GetPod(namespace string, podName string) (*v1.Pod, error) {
+	return nil, fmt.Errorf("Fake Pod Control doesn't support GetPod()")
 }
 
 func (f *FakePodControl) CreatePods(namespace string, spec *v1.PodTemplateSpec, object runtime.Object) error {

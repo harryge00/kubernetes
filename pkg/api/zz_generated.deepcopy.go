@@ -607,6 +607,13 @@ func DeepCopy_api_Container(in interface{}, out interface{}, c *conversion.Clone
 				return err
 			}
 		}
+		if in.ServiceProbe != nil {
+			in, out := &in.ServiceProbe, &out.ServiceProbe
+			*out = new(Probe)
+			if err := DeepCopy_api_Probe(*in, *out, c); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 }

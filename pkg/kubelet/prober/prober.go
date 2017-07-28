@@ -73,21 +73,23 @@ func newProber(
 }
 
 // probe probes the container.
-func (pb *prober) probe(probeType probeType, pod *v1.Pod, status v1.PodStatus, container v1.Container, containerID kubecontainer.ContainerID) (results.Result, error) {
+func (pb *prober) probe(probeType probeType, pod *v1.Pod, status v1.PodStatus, container v1.Container, containerID kubecontainer.ContainerID) (results.Result, string, error) {
 	var probeSpec *v1.Probe
 	switch probeType {
 	case readiness:
 		probeSpec = container.ReadinessProbe
 	case liveness:
 		probeSpec = container.LivenessProbe
+	case service:
+		probeSpec = container.ServiceProbe
 	default:
-		return results.Failure, fmt.Errorf("Unknown probe type: %q", probeType)
+		return results.Failure, "", fmt.Errorf("Unknown probe type: %q", probeType)
 	}
 
 	ctrName := fmt.Sprintf("%s:%s", format.Pod(pod), container.Name)
 	if probeSpec == nil {
 		glog.Warningf("%s probe for %s is nil", probeType, ctrName)
-		return results.Success, nil
+		return results.Success, "", nil
 	}
 
 	result, output, err := pb.runProbeWithRetries(probeSpec, pod, status, container, containerID, maxProbeRetries)
@@ -108,10 +110,10 @@ func (pb *prober) probe(probeType probeType, pod *v1.Pod, status v1.PodStatus, c
 				pb.recorder.Eventf(events.ToObjectReference(ref), v1.EventTypeWarning, events.ContainerUnhealthy, "%s probe failed: %s", probeType, output)
 			}
 		}
-		return results.Failure, err
+		return results.Failure, "", err
 	}
 	glog.V(3).Infof("%s probe for %q succeeded", probeType, ctrName)
-	return results.Success, nil
+	return results.Success, output, nil
 }
 
 // runProbeWithRetries tries to probe the container in a finite loop, it returns the last result
@@ -174,6 +176,7 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 	glog.Warningf("Failed to find probe builder for container: %v", container)
 	return probe.Unknown, "", fmt.Errorf("Missing probe handler for %s:%s", format.Pod(pod), container.Name)
 }
+
 
 func extractPort(param intstr.IntOrString, container v1.Container) (int, error) {
 	port := -1

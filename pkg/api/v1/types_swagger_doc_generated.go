@@ -252,6 +252,7 @@ var map_Container = map[string]string{
 	"stdin":                    "Whether this container should allocate a buffer for stdin in the container runtime. If this is not set, reads from stdin in the container will always result in EOF. Default is false.",
 	"stdinOnce":                "Whether the container runtime should close the stdin channel after it has been opened by a single attach. When stdin is true the stdin stream will remain open across multiple attach sessions. If stdinOnce is set to true, stdin is opened on container start, is empty until the first client attaches to stdin, and then remains open and accepts data until the client disconnects, at which time stdin is closed and remains closed until the container is restarted. If this flag is false, a container processes that reads from stdin will never receive an EOF. Default is false",
 	"tty":                      "Whether this container should allocate a TTY for itself, also requires 'stdin' to be true. Default is false.",
+	"serviceProbe":             "Periodic probe of container sclaeinfo. Container will be restarted if the probe fails. Cannot be updated.",
 }
 
 func (Container) SwaggerDoc() map[string]string {
@@ -336,6 +337,8 @@ var map_ContainerStatus = map[string]string{
 	"image":        "The image the container is running. More info: http://kubernetes.io/docs/user-guide/images",
 	"imageID":      "ImageID of the container's image.",
 	"containerID":  "Container's ID in the format 'docker://<container_id>'. More info: http://kubernetes.io/docs/user-guide/container-environment#container-information",
+	"isScale":      "Indicate whether the container can be scale down",
+	"workLoad":     "Indicate the app report workload for the container",
 }
 
 func (ContainerStatus) SwaggerDoc() map[string]string {
@@ -1356,6 +1359,7 @@ var map_PodStatus = map[string]string{
 	"initContainerStatuses": "The list has one entry per init container in the manifest. The most recent successful init container will have ready = true, the most recently started container will have startTime set. More info: http://kubernetes.io/docs/user-guide/pod-states#container-statuses",
 	"containerStatuses":     "The list has one entry per container in the manifest. Each entry is currently the output of `docker inspect`. More info: http://kubernetes.io/docs/user-guide/pod-states#container-statuses",
 	"qosClass":              "The Quality of Service (QOS) classification assigned to the pod based on resource requirements See PodQOSClass type for available QOS classes More info: https://github.com/kubernetes/kubernetes/blob/master/docs/design/resource-qos.md",
+	"isScale":               "Information get from application to indicating whether to scale up or scale down the number of pods",
 }
 
 func (PodStatus) SwaggerDoc() map[string]string {

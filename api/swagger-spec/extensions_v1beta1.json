@@ -7908,6 +7908,10 @@
      "tty": {
       "type": "boolean",
       "description": "Whether this container should allocate a TTY for itself, also requires 'stdin' to be true. Default is false."
+     },
+     "serviceProbe": {
+      "$ref": "v1.Probe",
+      "description": "Periodic probe of container sclaeinfo. Container will be restarted if the probe fails. Cannot be updated."
      }
     }
    },

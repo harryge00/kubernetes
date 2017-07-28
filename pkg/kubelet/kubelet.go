@@ -104,6 +104,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/procfs"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
+	"k8s.io/kubernetes/pkg/kubelet/leaky"
 )
 
 const (
@@ -160,6 +161,8 @@ const (
 
 	// Minimum number of dead containers to keep in a pod
 	minDeadContainerInPod = 1
+	// Length of slice to record container's workLoad
+//	length = 1024
 )
 
 // SyncHandler is an interface implemented by Kubelet, for testability
@@ -473,6 +476,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		iptablesMasqueradeBit:                   int(kubeCfg.IPTablesMasqueradeBit),
 		iptablesDropBit:                         int(kubeCfg.IPTablesDropBit),
 		experimentalHostUserNamespaceDefaulting: utilfeature.DefaultFeatureGate.Enabled(features.ExperimentalHostUserNamespaceDefaultingGate),
+		sampleWindow:           int32(kubeCfg.SampleWindow),
 	}
 
 	secretManager := secret.NewCachingSecretManager(
@@ -718,6 +722,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		klet.runner,
 		containerRefManager,
 		kubeDeps.Recorder)
+//	klet.probeManager.SetWorkload(klet)
 
 	klet.volumePluginMgr, err =
 		NewInitializedVolumePluginMgr(klet, secretManager, kubeDeps.VolumePlugins)
@@ -817,6 +822,24 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	// Finally, put the most recent version of the config on the Kubelet, so
 	// people can see how it was configured.
 	klet.kubeletConfiguration = *kubeCfg
+
+	glog.V(2).Info("SampleWindow is: ", klet.sampleWindow)
+//	workload := make(map[string][]utilruntime.WorkLoadSample)
+
+//	klet.containerWorkload = make(map[string][]cadvisorapi.MetricVal, (klet.maxPods * 2) )
+
+	/*
+	if klet.sampleWindow !=0 {
+		klet.containerWorkload := make(map[string][]int32)
+		klet.containerWorkload = make([]int32, 0, klet.sampleWindow)
+	} else {
+		klet.containerWorkload = make([]int32, 0, length)
+	}
+*/
+//	klet.containerWorkload = new(utilruntime.ContainerWorkLoad)
+//	klet.containerWorkload.Workload = workload
+//	klet.containerWorkload = utilruntime.ContainerWorkLoad{}
+
 	return klet, nil
 }
 
@@ -1120,8 +1143,68 @@ type Kubelet struct {
 	// dockerLegacyService contains some legacy methods for backward compatibility.
 	// It should be set only when docker is using non json-file logging driver.
 	dockerLegacyService dockershim.DockerLegacyService
+
+	// samplewindow indicate the number of latest sample result of ServiceProbe (workLoad) to remained
+	sampleWindow int32
+
+	//workload workload.AppWorkload
 }
 
+
+
+//type  WorkloadHandler interface {
+//	RecordWorkLoad(key string, value WorkLoadSample)
+//	GetWorkLoad() *ContainerWorkLoad
+//
+//}
+/*
+type ContainerWorkLoad struct{
+	Workload map[string][]WorkLoadSample
+	//	SampleWindow int
+}
+*/
+type WorkLoadSample struct{
+	WorkLoad int32
+	Timestamp  time.Time
+}
+
+/*
+type ContainerWorkLoad struct{
+	Workload map[string][]WorkLoadSample
+//	SampleWindow int
+}
+
+type WorkLoadSample struct{
+	WorkLoad int32
+	Timestamp  time.Time
+}
+
+*/
+/*
+func (kl *Kubelet) RecordWorkLoad(key string, value utilruntime.WorkLoadSample) {
+	var Length int32
+	if kl.sampleWindow == 0{
+		Length = length
+	} else {
+		Length = kl.sampleWindow
+	}
+	glog.V(3).Infof("Number of data to retain: %d", Length)
+
+	glog.V(2).Info("Record sample data for container: ", key)
+	glog.V(3).Infof("Original WorkLoad Record: %+v", kl.containerWorkload.Workload[key])
+	if len(kl.containerWorkload.Workload[key]) < int(Length) {
+		kl.containerWorkload.Workload[key] = append(kl.containerWorkload.Workload[key], value)
+	} else{
+		kl.containerWorkload.Workload[key] = append(kl.containerWorkload.Workload[key][1:len(kl.containerWorkload.Workload[key])], value)
+	}
+	glog.V(3).Infof("Newest WorkLoad: %+v", kl.containerWorkload.Workload[key])
+}
+*/
+/*
+func (kl *Kubelet) GetWorkLoad() *utilruntime.ContainerWorkLoad {
+	return kl.containerWorkload
+}
+*/
 // setupDataDirs creates:
 // 1.  the root directory
 // 2.  the pods directory
@@ -1271,6 +1354,12 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 		go wait.Until(func() { kl.checkLimitsForResolvConf() }, 30*time.Second, wait.NeverStop)
 	}
 
+//	var workload utilruntime.WorkloadHandler
+//	workload = kl
+
+//	kl.probeManager.SetWorkload(kl)
+
+//	kl.probeManager.SetWorkload(kl.(*utilruntime.WorkloadHandler))
 	// Start component sync loops.
 	kl.statusManager.Start()
 	kl.probeManager.Start()
@@ -1440,6 +1529,17 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 		for _, cs := range apiPodStatus.ContainerStatuses {
 			if cs.State.Waiting != nil {
 				cs.State.Waiting.Reason = waitingReason
+			}
+		}
+	}
+
+	podInfraContainerStatus := podStatus.FindContainerStatusByName(leaky.PodInfraContainerName)
+	if podInfraContainerStatus == nil || podInfraContainerStatus.State != kubecontainer.ContainerStateRunning {
+		glog.V(4).Infof("Found pod infra container for %q is not at runing state", format.Pod(pod))
+		glog.V(4).Infof("Change the Pod ConditionStatus for %q ", format.Pod(pod))
+		for l, c := range apiPodStatus.Conditions {
+			if c.Type == v1.PodReady {
+				apiPodStatus.Conditions[l].Status = v1.ConditionFalse
 			}
 		}
 	}

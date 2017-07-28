@@ -252,6 +252,12 @@ func SetObjectDefaults_Pod(in *Pod) {
 				}
 			}
 		}
+		if a.ServiceProbe != nil {
+			SetDefaults_Probe(a.ServiceProbe)
+			if a.ServiceProbe.Handler.HTTPGet != nil {
+				SetDefaults_HTTPGetAction(a.ServiceProbe.Handler.HTTPGet)
+			}
+		}
 	}
 	for i := range in.Spec.Containers {
 		a := &in.Spec.Containers[i]
@@ -292,6 +298,12 @@ func SetObjectDefaults_Pod(in *Pod) {
 				if a.Lifecycle.PreStop.HTTPGet != nil {
 					SetDefaults_HTTPGetAction(a.Lifecycle.PreStop.HTTPGet)
 				}
+			}
+		}
+		if a.ServiceProbe != nil {
+			SetDefaults_Probe(a.ServiceProbe)
+			if a.ServiceProbe.Handler.HTTPGet != nil {
+				SetDefaults_HTTPGetAction(a.ServiceProbe.Handler.HTTPGet)
 			}
 		}
 	}
@@ -400,6 +412,12 @@ func SetObjectDefaults_PodTemplate(in *PodTemplate) {
 				}
 			}
 		}
+		if a.ServiceProbe != nil {
+			SetDefaults_Probe(a.ServiceProbe)
+			if a.ServiceProbe.Handler.HTTPGet != nil {
+				SetDefaults_HTTPGetAction(a.ServiceProbe.Handler.HTTPGet)
+			}
+		}
 	}
 	for i := range in.Template.Spec.Containers {
 		a := &in.Template.Spec.Containers[i]
@@ -440,6 +458,12 @@ func SetObjectDefaults_PodTemplate(in *PodTemplate) {
 				if a.Lifecycle.PreStop.HTTPGet != nil {
 					SetDefaults_HTTPGetAction(a.Lifecycle.PreStop.HTTPGet)
 				}
+			}
+		}
+		if a.ServiceProbe != nil {
+			SetDefaults_Probe(a.ServiceProbe)
+			if a.ServiceProbe.Handler.HTTPGet != nil {
+				SetDefaults_HTTPGetAction(a.ServiceProbe.Handler.HTTPGet)
 			}
 		}
 	}
@@ -542,6 +566,12 @@ func SetObjectDefaults_ReplicationController(in *ReplicationController) {
 					}
 				}
 			}
+			if a.ServiceProbe != nil {
+				SetDefaults_Probe(a.ServiceProbe)
+				if a.ServiceProbe.Handler.HTTPGet != nil {
+					SetDefaults_HTTPGetAction(a.ServiceProbe.Handler.HTTPGet)
+				}
+			}
 		}
 		for i := range in.Spec.Template.Spec.Containers {
 			a := &in.Spec.Template.Spec.Containers[i]
@@ -582,6 +612,12 @@ func SetObjectDefaults_ReplicationController(in *ReplicationController) {
 					if a.Lifecycle.PreStop.HTTPGet != nil {
 						SetDefaults_HTTPGetAction(a.Lifecycle.PreStop.HTTPGet)
 					}
+				}
+			}
+			if a.ServiceProbe != nil {
+				SetDefaults_Probe(a.ServiceProbe)
+				if a.ServiceProbe.Handler.HTTPGet != nil {
+					SetDefaults_HTTPGetAction(a.ServiceProbe.Handler.HTTPGet)
 				}
 			}
 		}

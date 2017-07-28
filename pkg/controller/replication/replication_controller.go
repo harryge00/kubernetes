@@ -519,6 +519,20 @@ func (rm *ReplicationManager) manageReplicas(filteredPods []*v1.Pod, rc *v1.Repl
 	var wg sync.WaitGroup
 	wg.Add(diff)
 	for i := 0; i < diff; i++ {
+		pod, err := rm.podControl.GetPod(rc.Namespace, filteredPods[i].Name)
+		if err != nil {
+			wg.Done()
+			errCh <- err
+			continue
+		}
+		if !podIsScale(pod) {
+			wg.Done()
+			errMsg := fmt.Errorf("unable to scale this pod %s, continue to check the next.", rc.Namespace+filteredPods[i].Name)
+			glog.V(6).Info(errMsg)
+			errCh <- errMsg
+			continue
+		}
+
 		go func(ix int) {
 			defer wg.Done()
 			if err := rm.podControl.DeletePod(rc.Namespace, filteredPods[ix].Name, rc); err != nil {
@@ -544,6 +558,16 @@ func (rm *ReplicationManager) manageReplicas(filteredPods []*v1.Pod, rc *v1.Repl
 
 	return nil
 
+}
+
+func podIsScale(pod *v1.Pod) bool {
+	for _, container := range pod.Spec.Containers {
+		if container.ServiceProbe != nil && !pod.Status.IsScale {
+			return false
+		}
+	}
+
+	return true
 }
 
 // syncReplicationController will sync the rc with the given key if it has had its expectations fulfilled, meaning

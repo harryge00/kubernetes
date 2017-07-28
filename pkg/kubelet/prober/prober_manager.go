@@ -29,6 +29,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/prober/results"
 	"k8s.io/kubernetes/pkg/kubelet/status"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+//	"k8s.io/kubernetes/pkg/kubelet"
+//	"k8s.io/apimachinery/pkg/util/runtime"
+//	"k8s.io/kubernetes/pkg/kubelet/workload"
 )
 
 // Manager manages pod probing. It creates a probe "worker" for every container that specifies a
@@ -39,6 +42,7 @@ import (
 type Manager interface {
 	// AddPod creates new probe workers for every container probe. This should be called for every
 	// pod created.
+	// AddPod(pod *v1.Pod, kl *kubelet.Kubelet)
 	AddPod(pod *v1.Pod)
 
 	// RemovePod handles cleaning up the removed pod state, including terminating probe workers and
@@ -55,6 +59,8 @@ type Manager interface {
 
 	// Start starts the Manager sync loops.
 	Start()
+
+//	SetWorkload(workloadHandler runtime.WorkloadHandler)
 }
 
 type manager struct {
@@ -72,8 +78,13 @@ type manager struct {
 	// livenessManager manages the results of liveness probes
 	livenessManager results.Manager
 
+	// serviceManager manages the results of liveness probes
+	serviceManager results.Manager
+
 	// prober executes the probe actions.
 	prober *prober
+
+//	workloadHandler runtime.WorkloadHandler
 }
 
 func NewManager(
@@ -93,7 +104,11 @@ func NewManager(
 		workers:          make(map[probeKey]*worker),
 	}
 }
-
+/*
+func(m *manager) SetWorkload(workloadHandler runtime.WorkloadHandler) {
+	m.workloadHandler = workloadHandler
+}
+*/
 // Start syncing probe status. This should only be called once.
 func (m *manager) Start() {
 	// Start syncing readiness.
@@ -113,6 +128,7 @@ type probeType int
 const (
 	liveness probeType = iota
 	readiness
+	service
 )
 
 // For debugging.
@@ -122,11 +138,14 @@ func (t probeType) String() string {
 		return "Readiness"
 	case liveness:
 		return "Liveness"
+	case service:
+		return "Service"
 	default:
 		return "UNKNOWN"
 	}
 }
 
+//func (m *manager) AddPod(pod *v1.Pod, kl *kubelet.Kubelet) {
 func (m *manager) AddPod(pod *v1.Pod) {
 	m.workerLock.Lock()
 	defer m.workerLock.Unlock()
@@ -143,6 +162,7 @@ func (m *manager) AddPod(pod *v1.Pod) {
 				return
 			}
 			w := newWorker(m, readiness, pod, c)
+//			w.SetWorkload(m.workloadHandler)
 			m.workers[key] = w
 			go w.run()
 		}
@@ -158,6 +178,18 @@ func (m *manager) AddPod(pod *v1.Pod) {
 			m.workers[key] = w
 			go w.run()
 		}
+
+		if c.ServiceProbe != nil {
+			key.probeType = service
+			if _, ok := m.workers[key]; ok {
+				glog.Errorf("Service probe already exists! %v - %v",
+					format.Pod(pod), c.Name)
+				return
+			}
+			w := newWorker(m, service, pod, c)
+			m.workers[key] = w
+			go w.run()
+		}
 	}
 }
 
@@ -168,7 +200,7 @@ func (m *manager) RemovePod(pod *v1.Pod) {
 	key := probeKey{podUID: pod.UID}
 	for _, c := range pod.Spec.Containers {
 		key.containerName = c.Name
-		for _, probeType := range [...]probeType{readiness, liveness} {
+		for _, probeType := range [...]probeType{readiness, liveness, service} {
 			key.probeType = probeType
 			if worker, ok := m.workers[key]; ok {
 				worker.stop()
@@ -207,6 +239,7 @@ func (m *manager) UpdatePodStatus(podUID types.UID, podStatus *v1.PodStatus) {
 		}
 		podStatus.ContainerStatuses[i].Ready = ready
 	}
+
 	// init containers are ready if they have exited with success or if a readiness probe has
 	// succeeded.
 	for i, c := range podStatus.InitContainerStatuses {
@@ -245,3 +278,4 @@ func (m *manager) updateReadiness() {
 	ready := update.Result == results.Success
 	m.statusManager.SetContainerReadiness(update.PodUID, update.ContainerID, ready)
 }
+

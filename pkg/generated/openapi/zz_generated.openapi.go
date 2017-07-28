@@ -2660,6 +2660,12 @@ func GetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.Ope
 								Format:      "",
 							},
 						},
+						"serviceProbe": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Periodic probe of container sclaeinfo. Container will be restarted if the probe fails. Cannot be updated.",
+								Ref:         ref("k8s.io/kubernetes/pkg/api/v1.Probe"),
+							},
+						},
 					},
 					Required: []string{"name"},
 				},
@@ -2933,8 +2939,22 @@ func GetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.Ope
 								Format:      "",
 							},
 						},
+						"isScale": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Indicate whether the container can be scale down",
+								Type:        []string{"boolean"},
+								Format:      "",
+							},
+						},
+						"workLoad": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Indicate the app report workload for the container",
+								Type:        []string{"integer"},
+								Format:      "int32",
+							},
+						},
 					},
-					Required: []string{"name", "ready", "restartCount", "image", "imageID"},
+					Required: []string{"name", "ready", "restartCount", "image", "imageID", "isScale", "workLoad"},
 				},
 			},
 			Dependencies: []string{
@@ -6728,7 +6748,15 @@ func GetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.Ope
 								Format:      "",
 							},
 						},
+						"isScale": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Information get from application to indicating whether to scale up or scale down the number of pods",
+								Type:        []string{"boolean"},
+								Format:      "",
+							},
+						},
 					},
+					Required: []string{"isScale"},
 				},
 			},
 			Dependencies: []string{
@@ -13240,6 +13268,13 @@ func GetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.Ope
 								Format:      "",
 							},
 						},
+						"sampleWindow": {
+							SchemaProps: spec.SchemaProps{
+								Description: "sampleWindow set the number of workload for each container to retain in memory",
+								Type:        []string{"integer"},
+								Format:      "int32",
+							},
+						},
 						"clusterDomain": {
 							SchemaProps: spec.SchemaProps{
 								Description: "clusterDomain is the DNS domain for this cluster. If set, kubelet will configure all containers to search this domain in addition to the host's search domains.",
@@ -13855,7 +13890,7 @@ func GetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.Ope
 							},
 						},
 					},
-					Required: []string{"podManifestPath", "syncFrequency", "fileCheckFrequency", "httpCheckFrequency", "manifestURL", "manifestURLHeader", "enableServer", "address", "port", "readOnlyPort", "tlsCertFile", "tlsPrivateKeyFile", "certDirectory", "authentication", "authorization", "hostnameOverride", "podInfraContainerImage", "dockerEndpoint", "rootDirectory", "seccompProfileRoot", "allowPrivileged", "hostNetworkSources", "hostPIDSources", "hostIPCSources", "registryPullQPS", "registryBurst", "eventRecordQPS", "eventBurst", "enableDebuggingHandlers", "enableContentionProfiling", "minimumGCAge", "maxPerPodContainerCount", "maxContainerCount", "cAdvisorPort", "healthzPort", "healthzBindAddress", "oomScoreAdj", "registerNode", "clusterDomain", "masterServiceNamespace", "clusterDNS", "streamingConnectionIdleTimeout", "nodeStatusUpdateFrequency", "imageMinimumGCAge", "imageGCHighThresholdPercent", "imageGCLowThresholdPercent", "lowDiskSpaceThresholdMB", "volumeStatsAggPeriod", "networkPluginName", "networkPluginDir", "cniConfDir", "cniBinDir", "networkPluginMTU", "volumePluginDir", "cloudProvider", "cloudConfigFile", "kubeletCgroups", "runtimeCgroups", "systemCgroups", "cgroupRoot", "containerRuntime", "remoteRuntimeEndpoint", "remoteImageEndpoint", "runtimeRequestTimeout", "rktPath", "rktAPIEndpoint", "rktStage1Image", "lockFilePath", "exitOnLockContention", "hairpinMode", "babysitDaemons", "maxPods", "dockerExecHandlerName", "podCIDR", "resolvConf", "cpuCFSQuota", "containerized", "maxOpenFiles", "registerSchedulable", "registerWithTaints", "contentType", "kubeAPIQPS", "kubeAPIBurst", "serializeImagePulls", "outOfDiskTransitionFrequency", "nodeIP", "nodeLabels", "nonMasqueradeCIDR", "enableCustomMetrics", "evictionHard", "evictionSoft", "evictionSoftGracePeriod", "evictionPressureTransitionPeriod", "evictionMaxPodGracePeriod", "evictionMinimumReclaim", "experimentalKernelMemcgNotification", "podsPerCore", "enableControllerAttachDetach", "experimentalQOSReserved", "protectKernelDefaults", "makeIPTablesUtilChains", "iptablesMasqueradeBit", "iptablesDropBit", "systemReserved", "kubeReserved"},
+					Required: []string{"podManifestPath", "syncFrequency", "fileCheckFrequency", "httpCheckFrequency", "manifestURL", "manifestURLHeader", "enableServer", "address", "port", "readOnlyPort", "tlsCertFile", "tlsPrivateKeyFile", "certDirectory", "authentication", "authorization", "hostnameOverride", "podInfraContainerImage", "dockerEndpoint", "rootDirectory", "seccompProfileRoot", "allowPrivileged", "hostNetworkSources", "hostPIDSources", "hostIPCSources", "registryPullQPS", "registryBurst", "eventRecordQPS", "eventBurst", "enableDebuggingHandlers", "enableContentionProfiling", "minimumGCAge", "maxPerPodContainerCount", "maxContainerCount", "cAdvisorPort", "healthzPort", "healthzBindAddress", "oomScoreAdj", "registerNode", "sampleWindow", "clusterDomain", "masterServiceNamespace", "clusterDNS", "streamingConnectionIdleTimeout", "nodeStatusUpdateFrequency", "imageMinimumGCAge", "imageGCHighThresholdPercent", "imageGCLowThresholdPercent", "lowDiskSpaceThresholdMB", "volumeStatsAggPeriod", "networkPluginName", "networkPluginDir", "cniConfDir", "cniBinDir", "networkPluginMTU", "volumePluginDir", "cloudProvider", "cloudConfigFile", "kubeletCgroups", "runtimeCgroups", "systemCgroups", "cgroupRoot", "containerRuntime", "remoteRuntimeEndpoint", "remoteImageEndpoint", "runtimeRequestTimeout", "rktPath", "rktAPIEndpoint", "rktStage1Image", "lockFilePath", "exitOnLockContention", "hairpinMode", "babysitDaemons", "maxPods", "dockerExecHandlerName", "podCIDR", "resolvConf", "cpuCFSQuota", "containerized", "maxOpenFiles", "registerSchedulable", "registerWithTaints", "contentType", "kubeAPIQPS", "kubeAPIBurst", "serializeImagePulls", "outOfDiskTransitionFrequency", "nodeIP", "nodeLabels", "nonMasqueradeCIDR", "enableCustomMetrics", "evictionHard", "evictionSoft", "evictionSoftGracePeriod", "evictionPressureTransitionPeriod", "evictionMaxPodGracePeriod", "evictionMinimumReclaim", "experimentalKernelMemcgNotification", "podsPerCore", "enableControllerAttachDetach", "experimentalQOSReserved", "protectKernelDefaults", "makeIPTablesUtilChains", "iptablesMasqueradeBit", "iptablesDropBit", "systemReserved", "kubeReserved"},
 				},
 			},
 			Dependencies: []string{
