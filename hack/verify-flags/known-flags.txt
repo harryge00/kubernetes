@@ -549,6 +549,7 @@ reconcile-cidr
 reconcile-cooldown
 reconcile-interval
 register-node
+sample-window
 register-retry-count
 register-schedulable
 register-with-taints

@@ -29,9 +29,6 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/prober/results"
 	"k8s.io/kubernetes/pkg/kubelet/status"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
-//	"k8s.io/kubernetes/pkg/kubelet"
-//	"k8s.io/apimachinery/pkg/util/runtime"
-//	"k8s.io/kubernetes/pkg/kubelet/workload"
 )
 
 // Manager manages pod probing. It creates a probe "worker" for every container that specifies a
@@ -59,8 +56,6 @@ type Manager interface {
 
 	// Start starts the Manager sync loops.
 	Start()
-
-//	SetWorkload(workloadHandler runtime.WorkloadHandler)
 }
 
 type manager struct {
@@ -78,13 +73,11 @@ type manager struct {
 	// livenessManager manages the results of liveness probes
 	livenessManager results.Manager
 
-	// serviceManager manages the results of liveness probes
+	// serviceManager manages the results of service probes
 	serviceManager results.Manager
 
 	// prober executes the probe actions.
 	prober *prober
-
-//	workloadHandler runtime.WorkloadHandler
 }
 
 func NewManager(
@@ -104,11 +97,7 @@ func NewManager(
 		workers:          make(map[probeKey]*worker),
 	}
 }
-/*
-func(m *manager) SetWorkload(workloadHandler runtime.WorkloadHandler) {
-	m.workloadHandler = workloadHandler
-}
-*/
+
 // Start syncing probe status. This should only be called once.
 func (m *manager) Start() {
 	// Start syncing readiness.
@@ -122,7 +111,7 @@ type probeKey struct {
 	probeType     probeType
 }
 
-// Type of probe (readiness or liveness)
+// Type of probe (readiness or liveness or service)
 type probeType int
 
 const (
@@ -139,13 +128,12 @@ func (t probeType) String() string {
 	case liveness:
 		return "Liveness"
 	case service:
-		return "Service"
+		return "Service"  //Get data from user defined API by http request
 	default:
 		return "UNKNOWN"
 	}
 }
 
-//func (m *manager) AddPod(pod *v1.Pod, kl *kubelet.Kubelet) {
 func (m *manager) AddPod(pod *v1.Pod) {
 	m.workerLock.Lock()
 	defer m.workerLock.Unlock()
@@ -162,7 +150,6 @@ func (m *manager) AddPod(pod *v1.Pod) {
 				return
 			}
 			w := newWorker(m, readiness, pod, c)
-//			w.SetWorkload(m.workloadHandler)
 			m.workers[key] = w
 			go w.run()
 		}
@@ -179,6 +166,7 @@ func (m *manager) AddPod(pod *v1.Pod) {
 			go w.run()
 		}
 
+		//ServiceProbe get data from user defined API by http request
 		if c.ServiceProbe != nil {
 			key.probeType = service
 			if _, ok := m.workers[key]; ok {
