@@ -150,7 +150,7 @@ func TestSandboxStatus(t *testing.T) {
 func TestNetworkPluginInvocation(t *testing.T) {
 	ds, _, _ := newTestDockerService()
 	mockPlugin := newTestNetworkPlugin(t)
-	ds.network = network.NewPluginManager(mockPlugin)
+	ds.networkPlugin = network.NewPluginManager(mockPlugin)
 	defer mockPlugin.Finish()
 
 	name := "foo0"
@@ -180,7 +180,7 @@ func TestNetworkPluginInvocation(t *testing.T) {
 func TestHostNetworkPluginInvocation(t *testing.T) {
 	ds, _, _ := newTestDockerService()
 	mockPlugin := newTestNetworkPlugin(t)
-	ds.network = network.NewPluginManager(mockPlugin)
+	ds.networkPlugin = network.NewPluginManager(mockPlugin)
 	defer mockPlugin.Finish()
 
 	name := "foo0"
@@ -211,7 +211,7 @@ func TestHostNetworkPluginInvocation(t *testing.T) {
 func TestSetUpPodFailure(t *testing.T) {
 	ds, _, _ := newTestDockerService()
 	mockPlugin := newTestNetworkPlugin(t)
-	ds.network = network.NewPluginManager(mockPlugin)
+	ds.networkPlugin = network.NewPluginManager(mockPlugin)
 	defer mockPlugin.Finish()
 
 	name := "foo0"
