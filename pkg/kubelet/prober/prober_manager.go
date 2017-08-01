@@ -89,11 +89,13 @@ func NewManager(
 
 	prober := newProber(runner, refManager, recorder)
 	readinessManager := results.NewManager()
+	serviceManager := results.NewManager()
 	return &manager{
 		statusManager:    statusManager,
 		prober:           prober,
 		readinessManager: readinessManager,
 		livenessManager:  livenessManager,
+		serviceManager:  serviceManager,
 		workers:          make(map[probeKey]*worker),
 	}
 }
