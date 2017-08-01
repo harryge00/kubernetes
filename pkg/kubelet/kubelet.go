@@ -104,7 +104,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/procfs"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
-	"k8s.io/kubernetes/pkg/kubelet/leaky"
+//	"k8s.io/kubernetes/pkg/kubelet/leaky"
 )
 
 const (
@@ -1457,6 +1457,7 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 		}
 	}
 
+/*
 	podInfraContainerStatus := podStatus.FindContainerStatusByName(leaky.PodInfraContainerName)
 	if podInfraContainerStatus == nil || podInfraContainerStatus.State != kubecontainer.ContainerStateRunning {
 		glog.V(4).Infof("Found pod infra container for %q is not at runing state", format.Pod(pod))
@@ -1468,6 +1469,7 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 		}
 	}
 
+*/
 	// Update status in the status manager
 	kl.statusManager.SetPodStatus(pod, apiPodStatus)
 

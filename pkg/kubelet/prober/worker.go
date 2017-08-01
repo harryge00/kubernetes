@@ -112,24 +112,24 @@ func (w *worker) run() {
 		// Clean up.
 		probeTicker.Stop()
 		if !w.containerID.IsEmpty() {
+
+			glog.V(3).Infof("Need delete some workload data if container stopped or killed")
+			var buf bytes.Buffer
+			buf.WriteString(w.pod.Namespace)
+			buf.WriteString("_")
+			buf.WriteString(w.pod.Name)
+			buf.WriteString("_")
+			buf.WriteString(w.container.Name)
+
+			key := buf.String()
+			glog.V(3).Infof("Delete workload data for container: ", key)
+			handler := workload.DefaultMetricsCache
+			glog.V(3).Infof("Container Workload is: %+v", handler.GetWorkLoad(key))
+			handler.DeleteWorkLoad(key)
+
 			w.resultsManager.Remove(w.containerID)
 		}
-
 		w.probeManager.removeWorker(w.pod.UID, w.container.Name, w.probeType)
-
-		glog.V(3).Infof("Need delete some workload data if container stopped or killed")
-		var buf bytes.Buffer
-		buf.WriteString(w.pod.Namespace)
-		buf.WriteString("_")
-		buf.WriteString(w.pod.Name)
-		buf.WriteString("_")
-		buf.WriteString(w.container.Name)
-
-		key := buf.String()
-		glog.V(3).Infof("Delete workload data for container: ", key)
-		handler := workload.DefaultMetricsCache
-		glog.V(3).Infof("Container Workload is: %+v", handler.GetWorkLoad(key))
-		defer handler.DeleteWorkLoad(key)
 
 	}()
 
@@ -160,7 +160,6 @@ func (w *worker) stop() {
 
 // doProbe probes the container once and records the result.
 // Returns whether the worker should continue.
-// func (w *worker) doProbe(kl *kubelet.Kubelet) (keepGoing bool) {
 func (w *worker) doProbe() (keepGoing bool) {
 	defer func() { recover() }() // Actually eat panics (HandleCrash takes care of logging)
 	defer runtime.HandleCrash(func(_ interface{}) { keepGoing = true })
