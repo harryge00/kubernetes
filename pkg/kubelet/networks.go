@@ -78,7 +78,7 @@ func (n *noOpLegacyHost) GetPodByName(namespace, name string) (*v1.Pod, bool) {
 	return nil, true
 }
 
-func (n *noOpLegacyHost) GetKubeClient() clientset.Interface {
+func (n *noOpLegacyHost) GetKubeClient() clientset.Interface{
 	return nil
 }
 

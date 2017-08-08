@@ -63,6 +63,7 @@ type NetConf struct {
 		Type string `json:"type,omitempty"`
 	} `json:"ipam,omitempty"`
 	DNS DNS `json:"dns"`
+	Server string `json:"server,omitempty"`
 }
 
 // Result is what gets returned from the plugin (via stdout) to the caller

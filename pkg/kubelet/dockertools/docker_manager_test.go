@@ -104,8 +104,9 @@ func createTestDockerManager(fakeHTTPClient *fakeHTTP, fakeDocker *FakeDockerCli
 	}
 	fakeRecorder := &record.FakeRecorder{}
 	containerRefManager := kubecontainer.NewRefManager()
-	networkPlugin, _ := network.InitNetworkPlugin(
+	networkPlugin, _, _:= network.InitNetworkPlugin(
 		[]network.NetworkPlugin{},
+		"",
 		"",
 		nettest.NewFakeHost(nil),
 		componentconfig.HairpinNone,
@@ -122,6 +123,7 @@ func createTestDockerManager(fakeHTTPClient *fakeHTTP, fakeDocker *FakeDockerCli
 		0, 0, "",
 		&containertest.FakeOS{},
 		networkPlugin,
+		"",
 		&containertest.FakeRuntimeHelper{},
 		fakeHTTPClient,
 		flowcontrol.NewBackOff(time.Second, 300*time.Second))
