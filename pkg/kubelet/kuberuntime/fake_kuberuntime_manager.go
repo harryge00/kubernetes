@@ -57,7 +57,7 @@ func (f *fakePodGetter) GetPodByUID(uid types.UID) (*v1.Pod, bool) {
 	return pod, found
 }
 
-func NewFakeKubeRuntimeManager(runtimeService internalapi.RuntimeService, imageService internalapi.ImageManagerService, machineInfo *cadvisorapi.MachineInfo, networkPlugin network.NetworkPlugin, osInterface kubecontainer.OSInterface, runtimeHelper kubecontainer.RuntimeHelper) (*kubeGenericRuntimeManager, error) {
+func NewFakeKubeRuntimeManager(runtimeService internalapi.RuntimeService, imageService internalapi.ImageManagerService, machineInfo *cadvisorapi.MachineInfo, networkManager network.NetworkPlugin, macvlanManager network.NetworkPlugin, osInterface kubecontainer.OSInterface, runtimeHelper kubecontainer.RuntimeHelper) (*kubeGenericRuntimeManager, error) {
 	recorder := &record.FakeRecorder{}
 	kubeRuntimeManager := &kubeGenericRuntimeManager{
 		recorder:            recorder,
@@ -66,7 +66,8 @@ func NewFakeKubeRuntimeManager(runtimeService internalapi.RuntimeService, imageS
 		containerRefManager: kubecontainer.NewRefManager(),
 		machineInfo:         machineInfo,
 		osInterface:         osInterface,
-		networkPlugin:       networkPlugin,
+		networkPlugin:       networkManager,
+		macvlanPlugin:       macvlanManager,
 		runtimeHelper:       runtimeHelper,
 		runtimeService:      runtimeService,
 		imageService:        imageService,

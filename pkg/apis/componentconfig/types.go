@@ -507,6 +507,9 @@ type KubeletConfiguration struct {
 	// This flag, if set, will avoid including `EvictionHard` limits while computing Node Allocatable.
 	// Refer to [Node Allocatable](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node-allocatable.md) doc for more information.
 	ExperimentalNodeAllocatableIgnoreEvictionThreshold bool
+
+	//Peiqi, for macvlan network plugin config
+	MacvlanConfigFile string `json:"MacvlanConfigFile,omitempty"`
 }
 
 type KubeletAuthorizationMode string

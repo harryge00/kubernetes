@@ -154,7 +154,10 @@ type DockerManager struct {
 	containerLogsDir string
 
 	// Network plugin manager.
-	network *knetwork.PluginManager
+	networkPlugin *knetwork.PluginManager
+
+	// Macvlan plugin
+	macvlanPlugin *knetwork.PluginManager
 
 	// Health check results.
 	livenessManager proberesults.Manager
@@ -228,6 +231,7 @@ func NewDockerManager(
 	containerLogsDir string,
 	osInterface kubecontainer.OSInterface,
 	networkPlugin knetwork.NetworkPlugin,
+	macvlanPlugin knetwork.NetworkPlugin,
 	runtimeHelper kubecontainer.RuntimeHelper,
 	httpClient types.HttpGetter,
 	execHandler ExecHandler,
@@ -268,7 +272,9 @@ func NewDockerManager(
 		dockerPuller:           newDockerPuller(client),
 		cgroupDriver:           cgroupDriver,
 		containerLogsDir:       containerLogsDir,
-		network:                knetwork.NewPluginManager(networkPlugin),
+		networkPlugin:          knetwork.NewPluginManager(networkPlugin),
+		macvlanPlugin:          knetwork.NewPluginManager(macvlanPlugin),
+
 		livenessManager:        livenessManager,
 		runtimeHelper:          runtimeHelper,
 		execHandler:            execHandler,
@@ -283,7 +289,7 @@ func NewDockerManager(
 	cmdRunner := kubecontainer.DirectStreamingRunner(dm)
 	dm.runner = lifecycle.NewHandlerRunner(httpClient, cmdRunner, dm)
 	dm.imagePuller = images.NewImageManager(kubecontainer.FilterEventRecorder(recorder), dm, imageBackOff, serializeImagePulls, qps, burst)
-	dm.containerGC = NewContainerGC(client, podGetter, dm.network, containerLogsDir)
+	dm.containerGC = NewContainerGC(client, podGetter, dm.networkPlugin, containerLogsDir)
 
 	dm.versionCache = cache.NewObjectCache(
 		func() (interface{}, error) {
@@ -358,8 +364,8 @@ func (dm *DockerManager) determineContainerIP(podNamespace, podName string, cont
 	isHostNetwork := networkMode == namespaceModeHost
 
 	// For host networking or default network plugin, GetPodNetworkStatus doesn't work
-	if !isHostNetwork && dm.network.PluginName() != knetwork.DefaultPluginName {
-		netStatus, err := dm.network.GetPodNetworkStatus(podNamespace, podName, kubecontainer.DockerID(container.ID).ContainerID())
+	if !isHostNetwork && dm.networkPlugin.PluginName() != knetwork.DefaultPluginName {
+		netStatus, err := dm.networkPlugin.GetPodNetworkStatus(podNamespace, podName, kubecontainer.DockerID(container.ID).ContainerID())
 		if err != nil {
 			glog.Error(err)
 			return result, err
@@ -1090,7 +1096,7 @@ func getDockerNetworkMode(container *dockertypes.ContainerJSON) string {
 }
 
 func (dm *DockerManager) pluginDisablesDockerNetworking() bool {
-	return dm.network.PluginName() == "cni" || dm.network.PluginName() == "kubenet"
+	return dm.networkPlugin.PluginName() == "cni" || dm.networkPlugin.PluginName() == "kubenet"
 }
 
 // newDockerVersion returns a semantically versioned docker version value
@@ -1518,7 +1524,7 @@ func (dm *DockerManager) killPodWithSyncResult(pod *v1.Pod, runtimePod kubeconta
 		}
 
 		if getDockerNetworkMode(ins) != namespaceModeHost {
-			if err := dm.network.TearDownPod(runtimePod.Namespace, runtimePod.Name, networkContainer.ID); err != nil {
+			if err := dm.networkPlugin.TearDownPod(runtimePod.Namespace, runtimePod.Name, networkContainer.ID); err != nil {
 				teardownNetworkResult.Fail(kubecontainer.ErrTeardownNetwork, err.Error())
 				glog.Error(err)
 			}
@@ -2027,7 +2033,7 @@ func (dm *DockerManager) computePodContainerChanges(pod *v1.Pod, podStatus *kube
 	defer func() {
 		metrics.ContainerManagerLatency.WithLabelValues("computePodContainerChanges").Observe(metrics.SinceInMicroseconds(start))
 	}()
-	glog.V(5).Infof("Syncing Pod %q: %#v", format.Pod(pod), pod)
+	glog.V(5).Infof(" Syncing Pod %q: %#v", format.Pod(pod), pod)
 
 	containersToStart := make(map[int]string)
 	containersToKeep := make(map[kubecontainer.DockerID]int)
@@ -2036,6 +2042,7 @@ func (dm *DockerManager) computePodContainerChanges(pod *v1.Pod, podStatus *kube
 	var podInfraContainerID kubecontainer.DockerID
 	var changed bool
 	podInfraContainerStatus := podStatus.FindContainerStatusByName(PodInfraContainerName)
+	glog.V(4).Infof(" checking podInfraContainerStatus %v, InfraContainerName %v", podInfraContainerStatus, PodInfraContainerName)
 	if podInfraContainerStatus != nil && podInfraContainerStatus.State == kubecontainer.ContainerStateRunning {
 		glog.V(4).Infof("Found pod infra container for %q", format.Pod(pod))
 		changed, err = dm.podInfraContainerChanged(pod, podInfraContainerStatus)
@@ -2174,7 +2181,10 @@ func (dm *DockerManager) computePodContainerChanges(pod *v1.Pod, podStatus *kube
 }
 
 // Sync the running pod to match the specified desired pod.
+
+//func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecontainer.PodStatus, pullSecrets []v1.Secret, backOff *flowcontrol.Backoff) (result kubecontainer.PodSyncResult) {
 func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecontainer.PodStatus, pullSecrets []v1.Secret, backOff *flowcontrol.Backoff) (result kubecontainer.PodSyncResult) {
+
 	start := time.Now()
 	defer func() {
 		metrics.ContainerManagerLatency.WithLabelValues("SyncPod").Observe(metrics.SinceInMicroseconds(start))
@@ -2186,7 +2196,6 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 		return
 	}
 	glog.V(3).Infof("Got container changes for pod %q: %+v", format.Pod(pod), containerChanges)
-
 	if containerChanges.InfraChanged {
 		dm.recorder.Eventf(pod, v1.EventTypeNormal, "InfraChanged", "Pod infrastructure changed, it will be killed and re-created.")
 	}
@@ -2242,6 +2251,7 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 						break
 					}
 				}
+
 				killContainerResult := kubecontainer.NewSyncResult(kubecontainer.KillContainer, containerStatus.Name)
 				result.AddSyncResult(killContainerResult)
 				if err := dm.KillContainerInPod(containerStatus.ID, podContainer, pod, killMessage, nil); err != nil {
@@ -2252,6 +2262,7 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 			}
 		}
 	}
+
 
 	// Keep terminated init containers fairly aggressively controlled
 	dm.pruneInitContainersBeforeStart(pod, podStatus, containerChanges.InitContainersToKeep)
@@ -2268,7 +2279,6 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 	if podStatus != nil {
 		podIP = podStatus.IP
 	}
-
 	// If we should create infra container then we do it first.
 	podInfraContainerID := containerChanges.InfraContainerId
 	if containerChanges.StartInfraContainer && (len(containerChanges.ContainersToStart) > 0) {
@@ -2280,16 +2290,21 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 		if err != nil {
 			startContainerResult.Fail(err, msg)
 			glog.Errorf("Failed to create pod infra container: %v; Skipping pod %q: %s", err, format.Pod(pod), msg)
-			return
+			return result
 		}
 
 		setupNetworkResult := kubecontainer.NewSyncResult(kubecontainer.SetupNetwork, kubecontainer.GetPodFullName(pod))
+		glog.V(4).Infof(" checking setupNetworkResult after createNetwork %v, pod %v", setupNetworkResult, pod)
 		result.AddSyncResult(setupNetworkResult)
 		if !kubecontainer.IsHostNetworkPod(pod) {
-			if err := dm.network.SetUpPod(pod.Namespace, pod.Name, podInfraContainerID.ContainerID(), pod.Annotations); err != nil {
+			if err := dm.networkPlugin.SetUpPod(pod.Namespace, pod.Name, podInfraContainerID.ContainerID(), pod.Annotations); err != nil {
 				setupNetworkResult.Fail(kubecontainer.ErrSetupNetwork, err.Error())
 				glog.Error(err)
 
+				//err := dm.delNetCard(pod, podInfraContainerID.ContainerID())
+				//if err != nil {
+			        //		glog.Errorf("failed to delete macvlan card %v", err)
+				//}
 				// Delete infra container
 				killContainerResult := kubecontainer.NewSyncResult(kubecontainer.KillContainer, PodInfraContainerName)
 				result.AddSyncResult(killContainerResult)
@@ -2302,6 +2317,7 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 
 			// Setup the host interface unless the pod is on the host's network (FIXME: move to networkPlugin when ready)
 			podInfraContainer, err := dm.client.InspectContainer(string(podInfraContainerID))
+			glog.V(4).Infof("checking podInfraContainer after inspectContainer %v, pod", podInfraContainer)
 			if err != nil {
 				glog.Errorf("Failed to inspect pod infra container: %v; Skipping pod %q", err, format.Pod(pod))
 				result.Fail(err)
@@ -2324,7 +2340,6 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 			glog.Infof("Determined pod ip after infra change: %q: %q", format.Pod(pod), podIP)
 		}
 	}
-
 	next, status, done := findActiveInitContainer(pod, podStatus)
 	if status != nil {
 		if status.ExitCode != 0 {
@@ -2346,7 +2361,6 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 	// See createPodInfraContainer for infra container setup.
 	namespaceMode := fmt.Sprintf("container:%v", podInfraContainerID)
 	pidMode := getPidMode(pod)
-
 	if next != nil {
 		if len(containerChanges.ContainersToStart) == 0 {
 			glog.V(4).Infof("No containers to start, stopping at init container %+v in pod %v", next.Name, format.Pod(pod))
@@ -2378,40 +2392,49 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 		// Successfully started the container; clear the entry in the failure
 		glog.V(4).Infof("Completed init container %q for pod %q", container.Name, format.Pod(pod))
 		return
-	}
-	if !done {
-		// init container still running
-		glog.V(4).Infof("An init container is still running in pod %v", format.Pod(pod))
-		return
-	}
-	if containerChanges.InitFailed {
-		// init container still running
-		glog.V(4).Infof("Not all init containers have succeeded for pod %v", format.Pod(pod))
-		return
-	}
+		if !done {
+			// init container still running
+			glog.V(4).Infof("An init container is still running in pod %v", format.Pod(pod))
+			return
+		}
+		if containerChanges.InitFailed {
+			// init container still running
+			glog.V(4).Infof("Not all init containers have succeeded for pod %v", format.Pod(pod))
+			return
+		}
+		// Start regular containers
+		for idx := range containerChanges.ContainersToStart {
+			container := &pod.Spec.Containers[idx]
+			startContainerResult := kubecontainer.NewSyncResult(kubecontainer.StartContainer, container.Name)
+			result.AddSyncResult(startContainerResult)
 
-	// Start regular containers
-	for idx := range containerChanges.ContainersToStart {
-		container := &pod.Spec.Containers[idx]
-		startContainerResult := kubecontainer.NewSyncResult(kubecontainer.StartContainer, container.Name)
-		result.AddSyncResult(startContainerResult)
+			// containerChanges.StartInfraContainer causes the containers to be restarted for config reasons
+			if !containerChanges.StartInfraContainer {
+				isInBackOff, err, msg := dm.doBackOff(pod, container, podStatus, backOff)
+				if isInBackOff {
+					startContainerResult.Fail(err, msg)
+					glog.V(4).Infof("Backing Off restarting container %+v in pod %v", container, format.Pod(pod))
+					continue
+				}
+			}
 
-		// containerChanges.StartInfraContainer causes the containers to be restarted for config reasons
-		if !containerChanges.StartInfraContainer {
-			isInBackOff, err, msg := dm.doBackOff(pod, container, podStatus, backOff)
-			if isInBackOff {
+			glog.V(4).Infof("Creating container %+v in pod %v", container, format.Pod(pod))
+			if err, msg := dm.tryContainerStart(container, pod, podStatus, pullSecrets, namespaceMode, pidMode, podIP); err != nil {
 				startContainerResult.Fail(err, msg)
-				glog.V(4).Infof("Backing Off restarting container %+v in pod %v", container, format.Pod(pod))
+				utilruntime.HandleError(fmt.Errorf("container start failed: %v: %s", err, msg))
 				continue
 			}
 		}
-
-		glog.V(4).Infof("Creating container %+v in pod %v", container, format.Pod(pod))
-		if err, msg := dm.tryContainerStart(container, pod, podStatus, pullSecrets, namespaceMode, pidMode, podIP); err != nil {
-			startContainerResult.Fail(err, msg)
-			utilruntime.HandleError(fmt.Errorf("container start failed: %v: %s", err, msg))
-			continue
+		label, err := dm.addNetCard(pod, podInfraContainerID.ContainerID())
+		glog.Infof("eeeeeeeeeeeeeee %s", label)
+		if label != "" {
+			pod.ObjectMeta.Labels["ips"] = label
 		}
+		if err != nil {
+			fmt.Printf("Failed to syn the second net card in the pod, %v", err)
+			return
+		}
+
 	}
 	return
 }
@@ -2777,4 +2800,114 @@ func truncateMsg(msg string, max int) string {
 	begin := (max - len(truncatedMsg)) / 2
 	end := len(msg) - (max - (len(truncatedMsg) + begin))
 	return msg[:begin] + truncatedMsg + msg[end:]
+}
+
+// To add a netcard, we demand IP GW POD NAMESPACE CONTAINERID and flag...
+func (dm *DockerManager) addNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) (string, error){
+	label := pod.ObjectMeta.Labels["network"]
+	if label == "" {
+		label2 := pod.ObjectMeta.Labels["ips"]
+		dev := strings.Split(label2, "-")[0]
+		glog.Infof("peiqi testing xxxxx outside %s", dev)
+		if dev != "dev"{
+			glog.Infof("peiqi testing xxxx %s", dev)
+			dm.macvlanPlugin.PluginLabels(dev)
+		}
+
+                // if not specified, do nothing
+		_, err := dm.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+		if err != nil {
+			glog.Errorf("checking macvlan Network info: %v; Skipping pod %q", err, format.Pod(pod))
+		}
+		err = dm.delNetCard(pod, containerID)
+		if err != nil {
+			glog.Errorf("delete macvlan card for updating macvlan Network error: %v; Skipping pod %q", err, format.Pod(pod))
+			return "dev-empty", err
+		}
+	}
+
+	err := dm.macvlanPlugin.PluginLabels(label)
+	if err != nil {
+		glog.Errorf("failed to pass label %v", err)
+		return "dev-empty", err
+	}
+	var flag bool = false
+	var dlabel string
+	// if label is set, and in the syn period.
+	podInfraContainer, err := dm.client.InspectContainer(string(containerID.ID))
+	glog.V(4).Infof("checking podInfraContainer after inspectContainer %v for macvlan, pod", podInfraContainer)
+	if err != nil {
+		glog.Errorf("Failed to inspect pod infra container: %v; Skipping pod %q", err, format.Pod(pod))
+	}
+
+	if dm.macvlanPlugin.PluginName() == "macvlan" {
+		// here, we get the second network card ip to check its status.
+		stat, err := dm.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+		if err != nil {
+			glog.Infof("Peiqi ensuring macvlan Network Info: %v; Skipping pod %q", err, format.Pod(pod))
+			flag = true
+		}
+
+		if flag {
+			err = dm.macvlanPlugin.SetUpPod(pod.Name, pod.Namespace, containerID, pod.Annotations)
+			if err != nil {
+				fmt.Printf("Peiqi failed to setup pod for macvlan netcard %v", err)
+				return "dev-empty", err
+			}
+
+			//check part
+			podInfraContainer, err := dm.client.InspectContainer(string(containerID.ID))
+			glog.V(4).Infof("checking podInfraContainer after inspectContainer %v for macvlan, pod", podInfraContainer)
+			if err != nil {
+				glog.Errorf("Peiqi Failed to inspect pod infra container: %v; Skipping pod %q", err, format.Pod(pod))
+			}
+
+			// here, we get the second network card ip to check its status.
+			PodStatus, err := dm.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+			PodIP := PodStatus.IP
+			if err != nil {
+				glog.Errorf("Peiqi Network error: %v; Skipping pod %q", err, format.Pod(pod))
+			}
+			glog.Infof("Peiqi Determined pod ip after infra change: %q: %q", format.Pod(pod), PodIP)
+
+			// After setup the card, we should add a label to registry the IP
+			labelsbefore := pod.ObjectMeta.GetLabels()
+			for key, value := range labelsbefore {
+				glog.Infof("key and value before is %v and %v", key, value)
+			}
+
+			dev := strings.Split(label, "-")[0]
+			dlabel = fmt.Sprintf("%s-%s", dev, PodIP.String())
+			pod.ObjectMeta.Labels["ips"] = dlabel
+			//peiqi testing label functionality
+			for key, value := range pod.ObjectMeta.GetLabels(){
+				glog.Infof("key and value in lables are %v and %v", key, value)
+			}
+
+			return dlabel, nil
+		}
+		return fmt.Sprintf("%s-%s", strings.Split(label, "-")[0], stat.IP.String()), nil
+	}
+	return "mmp", nil
+}
+
+func (dm *DockerManager) delNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) error {
+
+	podInfraContainer, err := dm.client.InspectContainer(string(containerID.ID))
+	glog.V(4).Infof("checking podInfraContainer after inspectContainer %v for macvlan, pod", podInfraContainer)
+	if err != nil {
+		glog.Errorf("Failed to inspect pod infra container: %v; Skipping pod %q", err, format.Pod(pod))
+		return err
+	}
+
+	if dm.macvlanPlugin.PluginName() == "macvlan" {
+		// here, we get the second network card ip to check its status.
+		err := dm.macvlanPlugin.TearDownPod(pod.Name, pod.Namespace, containerID)
+		if err != nil {
+			glog.Errorf("Failed to delete the IP and tear down the Pod, please check.")
+			return  err
+		}
+
+	}
+	return nil
 }

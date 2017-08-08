@@ -139,7 +139,7 @@ func getLoNetwork(binDir, vendorDirPrefix string) *cniNetwork {
 	return loNetwork
 }
 
-func (plugin *cniNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDR string, mtu int) error {
+func (plugin *cniNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, master string, mode string, addr string, nonMasqueradeCIDR string, mtu int) error {
 	var err error
 	plugin.nsenterPath, err = plugin.execer.LookPath("nsenter")
 	if err != nil {
@@ -239,9 +239,9 @@ func (plugin *cniNetworkPlugin) GetPodNetworkStatus(namespace string, name strin
 	}
 
 	ip, err := network.GetPodIP(plugin.execer, plugin.nsenterPath, netnsPath, network.DefaultInterfaceName)
-	if err != nil {
+	/*if err != nil {
 		return nil, err
-	}
+	}*/
 
 	return &network.PodNetworkStatus{IP: ip}, nil
 }
@@ -281,6 +281,7 @@ func (network *cniNetwork) deleteFromNetwork(podName string, podNamespace string
 	return nil
 }
 
+
 func buildCNIRuntimeConf(podName string, podNs string, podInfraContainerID kubecontainer.ContainerID, podNetnsPath string) (*libcni.RuntimeConf, error) {
 	glog.V(4).Infof("Got netns path %v", podNetnsPath)
 	glog.V(4).Infof("Using netns path %v", podNs)
@@ -299,3 +300,6 @@ func buildCNIRuntimeConf(podName string, podNs string, podInfraContainerID kubec
 
 	return rt, nil
 }
+
+
+

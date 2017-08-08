@@ -1840,7 +1840,7 @@ func validateContainers(containers []api.Container, volumes sets.String, fldPath
 		switch ctr.TerminationMessagePolicy {
 		case api.TerminationMessageReadFile, api.TerminationMessageFallbackToLogsOnError:
 		case "":
-			allErrs = append(allErrs, field.Required(idxPath.Child("terminationMessagePolicy"), "must be 'File' or 'FallbackToLogsOnError'"))
+			//allErrs = append(allErrs, field.Required(idxPath.Child("terminationMessagePolicy"), "must be 'File' or 'FallbackToLogsOnError'"))
 		default:
 			allErrs = append(allErrs, field.Invalid(idxPath.Child("terminationMessagePolicy"), ctr.TerminationMessagePolicy, "must be 'File' or 'FallbackToLogsOnError'"))
 		}
