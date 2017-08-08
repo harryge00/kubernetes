@@ -329,11 +329,8 @@ func (ed *emptyDir) TearDownAt(dir string) error {
 }
 
 func (ed *emptyDir) teardownDefault(dir string) error {
-	tmpDir, err := volume.RenameDirectory(dir, ed.volName+".deleting~")
-	if err != nil {
-		return err
-	}
-	err = os.RemoveAll(tmpDir)
+	err := os.RemoveAll(dir)
+	//glog.V(3).Infof("fuck2fuck2 pod %v: remove volume %v %v", ed.pod.UID, ed.volName, err)
 	if err != nil {
 		return err
 	}
