@@ -44,6 +44,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	util "k8s.io/kubernetes/pkg/util/podchanges"
 	utilversion "k8s.io/kubernetes/pkg/util/version"
 )
 
@@ -700,6 +701,20 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		return
 	}
 
+	if podContainerChanges.CreateSandbox {
+		if v1.IsPodReady(pod) {
+			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
+				ref := pod.OwnerReferences[0]
+				if ref.Kind == "ReplicationController" {
+					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
+				}
+				if ref.Kind == "Job" {
+					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+				}
+			}
+		}
+	}
+
 	// Step 6: start containers in podContainerChanges.ContainersToStart.
 	for idx := range podContainerChanges.ContainersToStart {
 		container := &pod.Spec.Containers[idx]
@@ -718,6 +733,20 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			startContainerResult.Fail(err, msg)
 			utilruntime.HandleError(fmt.Errorf("container start failed: %v: %s", err, msg))
 			continue
+		}
+	}
+
+	if podContainerChanges.CreateSandbox {
+		if v1.IsPodReady(pod) {
+			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
+				ref := pod.OwnerReferences[0]
+				if ref.Kind == "ReplicationController" {
+					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
+				}
+				if ref.Kind == "Job" {
+					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
+				}
+			}
 		}
 	}
 
