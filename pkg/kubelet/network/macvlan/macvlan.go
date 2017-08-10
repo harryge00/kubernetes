@@ -95,7 +95,7 @@ func (plugin *macvlanNetworkPlugin) Labels(label string) error{
 	if len(devatype) != 2 {
 		plugin.netdev = devatype[0]
 		log.Infof("Macvlan failed to split label, please check %v", devatype)
-		return fmt.Errorf("Macvlan failed to split label, please check %v, should be ERROR except delete card", devatype)
+		return nil
 	}
 	plugin.netdev = devatype[0]
 	plugin.typer = devatype[1]

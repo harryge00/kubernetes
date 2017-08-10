@@ -997,7 +997,6 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 		}
 		if dev != "dev" {
 			m.macvlanPlugin.Labels(dev)
-
 			// if not specified, do nothing
 			_, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
 			if err != nil {
@@ -1010,11 +1009,13 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 			}
 		}
 	}
+
 	err := m.macvlanPlugin.Labels(label)
 	if err != nil {
 		glog.Errorf("failed to pass label %v", err)
-		return dev+"-empty", err
+		return dev + "-empty", err
 	}
+
 	var flag bool = false
 	var dlabel string
 	// if label is set, and in the syn period.
@@ -1025,11 +1026,8 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 			glog.Infof("Peiqi ensuring macvlan Network Info: %v; Skipping pod %s", err, pod.Name)
 			flag = true
 		}
-	        /*else {
-			return 	dev+string(stat.IP), nil
-		}*/
-
 		if flag {
+
 			err = m.macvlanPlugin.SetUpPod(pod.Namespace, pod.Name, containerID, pod.Annotations)
 			if err != nil {
 				fmt.Printf("Peiqi failed to setup pod for macvlan netcard %v", err)
