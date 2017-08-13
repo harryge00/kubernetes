@@ -47,6 +47,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	utilversion "k8s.io/kubernetes/pkg/util/version"
+	"sync"
 )
 
 const (
@@ -96,6 +97,7 @@ type podGetter interface {
 }
 
 type kubeGenericRuntimeManager struct {
+	netpluginLock       sync.Mutex
 	runtimeName         string
 	recorder            record.EventRecorder
 	osInterface         kubecontainer.OSInterface
@@ -987,88 +989,91 @@ func (m *kubeGenericRuntimeManager) UpdatePodCIDR(podCIDR string) error {
 
 // To add a netcard, we demand IP GW POD NAMESPACE CONTAINERID and flag...
 func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) (string, error){
+	m.netpluginLock.Lock()
+	defer  m.netpluginLock.Unlock()
 	label := pod.ObjectMeta.Labels["network"]
 	label2 := pod.ObjectMeta.Labels["ips"]
 	devips := strings.Split(label2, "-")
 	dev := devips[0]
+	glog.Infof("peiqiqiqiqiqiqi testing netcard %s", label)
 	if label == "" {
 		if label2 == "" || devips[1] == "none" {
 			return dev+"-none", nil
 		}
-		if dev != "dev" {
+		glog.Infof("peiqiqiqiqiqiqi testing outside %s", devips[1])
+		if devips[1] != "empty" {
 			m.macvlanPlugin.Labels(dev)
 			// if not specified, do nothing
 			_, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
 			if err != nil {
 				glog.Errorf("checking macvlan Network info: %v; Skipping pod %s", err, pod.Name)
 			}
+			glog.Infof("peiqiqiqiqiqiqi testing inside %s", pod.Name, pod.Namespace, containerID)
 			err = m.delNetCard(pod, containerID)
 			if err != nil {
 				glog.Errorf("delete macvlan card for updating macvlan Network error: %v; Skipping pod %s", err, pod.Name)
 				return dev+"-empty", err
 			}
 		}
-	}
-
-	err := m.macvlanPlugin.Labels(label)
-	if err != nil {
-		glog.Errorf("failed to pass label %v", err)
-		return dev + "-empty", err
-	}
-
-	var flag bool = false
-	var dlabel string
-	// if label is set, and in the syn period.
-	if m.macvlanPlugin.Name() == "macvlan" {
-		// here, we get the second network card ip to check its status.
-		stat, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+	} else {
+		err := m.macvlanPlugin.Labels(label)
 		if err != nil {
-			glog.Infof("Peiqi ensuring macvlan Network Info: %v; Skipping pod %s", err, pod.Name)
-			flag = true
+			glog.Errorf("failed to pass label %v", err)
+			return dev + "-empty", err
 		}
-		if flag {
 
-			err = m.macvlanPlugin.SetUpPod(pod.Namespace, pod.Name, containerID, pod.Annotations)
-			if err != nil {
-				fmt.Printf("Peiqi failed to setup pod for macvlan netcard %v", err)
-				return dev+"-empty", err
-			}
-
+		var flag bool = false
+		var dlabel string
+		// if label is set, and in the syn period.
+		if m.macvlanPlugin.Name() == "macvlan" {
 			// here, we get the second network card ip to check its status.
-			PodStatus, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
-			PodIP := PodStatus.IP
+			stat, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
 			if err != nil {
-				glog.Errorf("Peiqi Network error: %v; Skipping pod %s", err, pod.Name)
+				glog.Infof("Peiqi ensuring macvlan Network Info: %v; Skipping pod %s", err, pod.Name)
+				flag = true
 			}
-			glog.Infof("Peiqi Determined pod ip after infra change: %s: %q", pod.Name, PodIP)
+			if flag {
+				err = m.macvlanPlugin.SetUpPod(pod.Namespace, pod.Name, containerID, pod.Annotations)
+				if err != nil {
+					fmt.Printf("Peiqi failed to setup pod for macvlan netcard %v", err)
+					return dev + "-empty", err
+				}
 
-			// After setup the card, we should add a label to registry the IP
-			labelsbefore := pod.GetLabels()
-			for key, value := range labelsbefore {
-				glog.Infof("key and value before is %v and %v", key, value)
+				// here, we get the second network card ip to check its status.
+				PodStatus, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+				PodIP := PodStatus.IP
+				if err != nil {
+					glog.Errorf("Peiqi Network error: %v; Skipping pod %s", err, pod.Name)
+				}
+				glog.Infof("Peiqi Determined pod ip after infra change: %s: %q", pod.Name, PodIP)
+
+				// After setup the card, we should add a label to registry the IP
+				labelsbefore := pod.GetLabels()
+				for key, value := range labelsbefore {
+					glog.Infof("key and value before is %v and %v", key, value)
+				}
+
+				dev := strings.Split(label, "-")[0]
+				dlabel = fmt.Sprintf("%s-%s", dev, PodIP.String())
+				pod.ObjectMeta.Labels["ips"] = dlabel
+				for key, value := range pod.GetLabels() {
+					glog.Infof("key and value in lables are %v and %v", key, value)
+				}
+
+				return dlabel, nil
 			}
-
-			dev := strings.Split(label, "-")[0]
-			dlabel = fmt.Sprintf("%s-%s", dev, PodIP.String())
-			pod.ObjectMeta.Labels["ips"] = dlabel
-			for key, value := range pod.GetLabels(){
-				glog.Infof("key and value in lables are %v and %v", key, value)
-			}
-
-			return dlabel, nil
+			return fmt.Sprintf("%s-%s", strings.Split(label, "-")[0], stat.IP.String()), nil
 		}
-		return fmt.Sprintf("%s-%s", strings.Split(label, "-")[0], stat.IP.String()), nil
 	}
-	return "mmp", nil
+	return dev+"-empty", nil
 }
 
 func (ds *kubeGenericRuntimeManager) delNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) error {
-
 	if ds.macvlanPlugin.Name() == "macvlan" {
 		// here, we get the second network card ip to check its status.
 		err := ds.macvlanPlugin.TearDownPod(pod.Namespace, pod.Name, containerID)
 		if err != nil {
-			glog.Errorf("Failed to delete the IP and tear down the Pod, please check.")
+			glog.Errorf("Failed to delete the IP, please check.")
 			return  err
 		}
 

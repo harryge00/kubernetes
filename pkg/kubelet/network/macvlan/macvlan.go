@@ -20,6 +20,8 @@ import (
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	dockerclient "github.com/fsouza/go-dockerclient"
+	"sync"
+	"github.com/golang/glog"
 )
 
 const (
@@ -57,6 +59,7 @@ type NWClient struct {
 }
 
 type macvlanNetworkPlugin struct {
+	Mutex       *sync.Mutex
 	network.NoopNetworkPlugin
 	netconf     NetConf
 	macvlanName string
@@ -76,6 +79,7 @@ func ProbeNetworkPlugins() []network.NetworkPlugin {
 
 func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, master string, mode string, addr string, nonMasqueradeCIDR string, mtu int) error {
 	//noop
+	plugin.Mutex = &sync.Mutex{}
 	plugin.host = host
 	plugin.macvlanName = "macvlan"
 	plugin.netconf = NetConf{
@@ -179,6 +183,9 @@ func (plugin *macvlanNetworkPlugin) Name() string {
 }
 
 func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID, annotations map[string]string) error {
+	//plugin.Mutex.Lock()
+	//defer plugin.Mutex.Unlock()
+
 	docker, err := dockerclient.NewClient("unix:///var/run/docker.sock")
 	if err != nil{
 		log.Errorf("Macvlan Failed to connect to docker at local host %v", err)
@@ -207,6 +214,9 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 }
 
 func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.ContainerID) error {
+	//plugin.Mutex.Lock()
+	//defer plugin.Mutex.Unlock()
+
 	docker, err := dockerclient.NewClient("unix:///var/run/docker.sock")
 	if err != nil{
 		log.Errorf("Failed to connect to docker at local host %v", err)
@@ -218,20 +228,23 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 	//we supposed netns link have been made for `ln -s /var/run/docker/netns /var/run` before add this second netdev
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
 	netns, err := ns.GetNS(fullnetns)
-
 	if err != nil {
+		glog.Errorf("failed to open netns %q: %v", netns, err)
 		return fmt.Errorf("failed to open netns %q: %v", netns, err)
 	}
 	status, err := plugin.GetPodNetworkStatus(namespace, name, id)
 	if err != nil {
+		glog.Infof("failed to get pod network status during pod teardown %v: %v", status, err)
 		return fmt.Errorf("failed to get pod network status during pod teardown %v: %v", status, err)
 	}
 	err = plugin.DeleteIP(status.IP.String())
 	if err != nil {
+		glog.Infof("Failed to delete IP from netns %v", err)
 		return fmt.Errorf("Failed to delete IP from netns %v", err)
 	}
 	err = cmdDel(plugin.netdev, fullnetns)
 	if err != nil {
+		glog.Infof("Failed to delete ifname from netns %v", err)
 		return fmt.Errorf("Failed to delete ifname from netns %v", err)
 	}
 	defer netns.Close()
@@ -388,8 +401,10 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 		return nil
 	})
 	if err != nil {
+		//plugin.netdev = ""
 		return nil, err
 	}
+	//ugin.netdev = ""
 	return macvlan, nil
 }
 
