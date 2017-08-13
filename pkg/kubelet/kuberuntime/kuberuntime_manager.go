@@ -995,12 +995,10 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 	label2 := pod.ObjectMeta.Labels["ips"]
 	devips := strings.Split(label2, "-")
 	dev := devips[0]
-	glog.Infof("peiqiqiqiqiqiqi testing netcard %s", label)
 	if label == "" {
 		if label2 == "" || devips[1] == "none" {
 			return dev+"-none", nil
 		}
-		glog.Infof("peiqiqiqiqiqiqi testing outside %s", devips[1])
 		if devips[1] != "empty" {
 			m.macvlanPlugin.Labels(dev)
 			// if not specified, do nothing
@@ -1008,7 +1006,6 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 			if err != nil {
 				glog.Errorf("checking macvlan Network info: %v; Skipping pod %s", err, pod.Name)
 			}
-			glog.Infof("peiqiqiqiqiqiqi testing inside %s", pod.Name, pod.Namespace, containerID)
 			err = m.delNetCard(pod, containerID)
 			if err != nil {
 				glog.Errorf("delete macvlan card for updating macvlan Network error: %v; Skipping pod %s", err, pod.Name)
