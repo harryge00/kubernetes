@@ -588,7 +588,7 @@ func (c *Client) CreateContainer(opts CreateContainerOptions) (*Container, error
 
 	if e, ok := err.(*Error); ok {
 		if e.Status == http.StatusNotFound {
-			return nil, ErrNoSuchImage
+			return nil, fmt.Errorf("ErrNoSuchImage")
 		}
 		if e.Status == http.StatusConflict {
 			return nil, ErrContainerAlreadyExists
@@ -1317,28 +1317,6 @@ type CommitContainerOptions struct {
 	Context    context.Context
 }
 
-// CommitContainer creates a new image from a container's changes.
-//
-// See https://goo.gl/CzIguf for more details.
-func (c *Client) CommitContainer(opts CommitContainerOptions) (*Image, error) {
-	path := "/commit?" + queryString(opts)
-	resp, err := c.do("POST", path, doOptions{
-		data:    opts.Run,
-		context: opts.Context,
-	})
-	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
-			return nil, &NoSuchContainer{ID: opts.Container}
-		}
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var image Image
-	if err := json.NewDecoder(resp.Body).Decode(&image); err != nil {
-		return nil, err
-	}
-	return &image, nil
-}
 
 // AttachToContainerOptions is the set of options that can be used when
 // attaching to a container.

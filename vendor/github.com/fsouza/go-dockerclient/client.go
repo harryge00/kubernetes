@@ -638,12 +638,12 @@ func handleStreamResponse(resp *http.Response, streamOptions *streamOptions) err
 		_, err = io.Copy(streamOptions.stdout, resp.Body)
 		return err
 	}
-	if st, ok := streamOptions.stdout.(interface {
+	if _, ok := streamOptions.stdout.(interface {
 		io.Writer
 		FD() uintptr
 		IsTerminal() bool
 	}); ok {
-		err = jsonmessage.DisplayJSONMessagesToStream(resp.Body, st, nil)
+		err = jsonmessage.DisplayJSONMessagesStream(resp.Body, streamOptions.stdout,0 ,false, nil)
 	} else {
 		err = jsonmessage.DisplayJSONMessagesStream(resp.Body, streamOptions.stdout, 0, false, nil)
 	}
