@@ -916,8 +916,15 @@ func RegisterType(x Message, name string) {
 	revProtoTypes[t] = name
 }
 
+func RegisterFile(filename string, fileDescriptor []byte) {
+	protoFiles[filename] = fileDescriptor
+}
 // MessageName returns the fully-qualified proto name for the given message type.
 func MessageName(x Message) string { return revProtoTypes[reflect.TypeOf(x)] }
+
+var (
+	protoFiles = make(map[string][]byte) // file name => fileDescriptor
+)
 
 // MessageType returns the message type (pointer to struct) for a named message.
 func MessageType(name string) reflect.Type { return protoTypes[name] }

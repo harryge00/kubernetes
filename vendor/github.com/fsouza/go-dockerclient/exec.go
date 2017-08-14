@@ -50,7 +50,7 @@ func (c *Client) CreateExec(opts CreateExecOptions) (*Exec, error) {
 	resp, err := c.do("POST", path, doOptions{data: opts, context: opts.Context})
 	if err != nil {
 		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
-			return nil, &NoSuchContainer{ID: opts.Container}
+			return nil, fmt.Errorf("no such containers")
 		}
 		return nil, err
 	}
