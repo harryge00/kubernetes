@@ -43,6 +43,28 @@ import (
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 )
 
+type FakeEventRecorder struct {}
+
+func (record FakeEventRecorder) Event(object runtime.Object, eventtype, reason, message string) {
+	fmt.Println(eventtype)
+	fmt.Println(reason)
+	fmt.Println(message)
+}
+
+func (record FakeEventRecorder) Eventf(object runtime.Object, eventtype, reason, messageFmt string, args ...interface{}){
+	fmt.Println(eventtype)
+	fmt.Println(reason)
+	fmt.Println(messageFmt)
+	fmt.Println(args...)
+}
+
+func (record FakeEventRecorder) PastEventf(object runtime.Object, timestamp metav1.Time, eventtype, reason, messageFmt string, args ...interface{}){
+	fmt.Println(eventtype)
+	fmt.Println(reason)
+	fmt.Println(messageFmt)
+	fmt.Println(args...)
+}
+
 // Generate new instance of test pod with the same initial value.
 func getTestPod() *v1.Pod {
 	return &v1.Pod{
@@ -75,7 +97,7 @@ func (m *manager) testSyncBatch() {
 func newTestManager(kubeClient clientset.Interface) *manager {
 	podManager := kubepod.NewBasicPodManager(podtest.NewFakeMirrorClient(), kubesecret.NewFakeManager())
 	podManager.AddPod(getTestPod())
-	return NewManager(kubeClient, podManager, &statustest.FakePodDeletionSafetyProvider{}).(*manager)
+	return NewManager(kubeClient, podManager, &statustest.FakePodDeletionSafetyProvider{}, FakeEventRecorder{}).(*manager)
 }
 
 func generateRandomMessage() string {
@@ -123,6 +145,94 @@ func verifyUpdates(t *testing.T, manager *manager, expectedUpdates int) {
 	if numUpdates != expectedUpdates {
 		t.Errorf("unexpected number of updates %d, expected %d", numUpdates, expectedUpdates)
 	}
+}
+
+
+func TestRecorderPodEvents(t *testing.T){
+	syncer := newTestManager(&fake.Clientset{})
+	testPod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "12345678",
+			Name:      "foo",
+			Namespace: "new",
+			OwnerReferences: [] metav1.OwnerReference{
+				metav1.OwnerReference{
+					Kind: "ReplicationController",
+				},
+			},
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{Name: "1234"},
+			},
+		},
+		Status: v1.PodStatus{
+			ContainerStatuses: []v1.ContainerStatus{
+				v1.ContainerStatus{
+					Name:  "1234",
+					Ready: true,
+					ContainerID: "123",
+				},
+			},
+		},
+	}
+
+	oldPodStatus := v1.PodStatus{
+		ContainerStatuses: []v1.ContainerStatus{
+			v1.ContainerStatus{
+				Name:  "1234",
+				Ready: false,
+				ContainerID: "123",
+			},
+		},
+	}
+
+	syncer.recorderPodEvents(&testPod, oldPodStatus, testPod.Status)
+
+	testPod.Status = v1.PodStatus{
+		ContainerStatuses: []v1.ContainerStatus{
+			v1.ContainerStatus{
+				Name:  "1234",
+				Ready: false,
+				ContainerID: "123",
+			},
+		},
+	}
+
+	oldPodStatus = v1.PodStatus{
+		ContainerStatuses: []v1.ContainerStatus{
+			v1.ContainerStatus{
+				Name:  "1234",
+				Ready: true,
+				ContainerID: "123",
+			},
+		},
+	}
+
+	syncer.recorderPodEvents(&testPod, oldPodStatus, testPod.Status)
+
+
+	testPod.Status = v1.PodStatus{
+		ContainerStatuses: []v1.ContainerStatus{
+			v1.ContainerStatus{
+				Name:  "1234",
+				Ready: true,
+				ContainerID: "123",
+			},
+		},
+	}
+
+	oldPodStatus = v1.PodStatus{
+		ContainerStatuses: []v1.ContainerStatus{
+			v1.ContainerStatus{
+				Name:  "1234",
+				Ready: true,
+				ContainerID: "321",
+			},
+		},
+	}
+
+	syncer.recorderPodEvents(&testPod, oldPodStatus, testPod.Status)
 }
 
 func TestNewStatus(t *testing.T) {

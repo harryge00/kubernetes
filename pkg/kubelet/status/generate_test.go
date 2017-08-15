@@ -116,6 +116,125 @@ func TestGeneratePodReadyCondition(t *testing.T) {
 	}
 }
 
+func TestDiffPodContainers(t *testing.T) {
+	spec := &v1.PodSpec{
+			Containers: []v1.Container{
+				{Name: "1234"},
+			},
+	}
+	oldContainerStatuses := []v1.ContainerStatus{
+		v1.ContainerStatus{
+			Name:  "1234",
+			Ready: true,
+			ContainerID: "123",
+		},
+	}
+
+	newContainerStatuses := []v1.ContainerStatus{
+		v1.ContainerStatus{
+			Name:  "1234",
+			Ready: true,
+			ContainerID: "123",
+		},
+	}
+
+	different := IsPodContainersDiff(spec, oldContainerStatuses, newContainerStatuses)
+
+	assert.Equal(t, different, false)
+
+
+	spec = &v1.PodSpec{
+		Containers: []v1.Container{
+			{Name: "1234"},
+		},
+	}
+	oldContainerStatuses = []v1.ContainerStatus{
+		v1.ContainerStatus{
+			Name:  "1234",
+			Ready: true,
+			ContainerID: "1234",
+		},
+	}
+
+	newContainerStatuses = []v1.ContainerStatus{
+		v1.ContainerStatus{
+			Name:  "1234",
+			Ready: true,
+			ContainerID: "4321",
+		},
+	}
+
+	different = IsPodContainersDiff(spec, oldContainerStatuses, newContainerStatuses)
+
+	assert.Equal(t, different, true)
+
+	spec = &v1.PodSpec{
+		Containers: []v1.Container{
+			{Name: "1234"},
+		},
+	}
+	oldContainerStatuses = []v1.ContainerStatus{
+		v1.ContainerStatus{
+			Name:  "1234",
+			Ready: true,
+			ContainerID: "1234",
+		},
+	}
+
+	newContainerStatuses = []v1.ContainerStatus{}
+
+	different = IsPodContainersDiff(spec, oldContainerStatuses, newContainerStatuses)
+
+	assert.Equal(t, different, true)
+}
+
+func TestJudgeIsPodReady(t *testing.T) {
+	spec := &v1.PodSpec{
+		Containers: []v1.Container{
+			{Name: "1234"},
+		},
+	}
+	containerStatuses := []v1.ContainerStatus{
+		v1.ContainerStatus{
+			Name:  "1234",
+			Ready: true,
+			ContainerID: "123",
+		},
+	}
+
+	podReady := IsPodReady(spec, containerStatuses)
+	assert.Equal(t, podReady, true)
+
+
+	spec = &v1.PodSpec{
+		Containers: []v1.Container{
+			{Name: "1234"},
+		},
+	}
+	containerStatuses = []v1.ContainerStatus{
+		v1.ContainerStatus{
+			Name:  "1234",
+			Ready: false,
+			ContainerID: "123",
+		},
+	}
+	podReady = IsPodReady(spec, containerStatuses)
+	assert.Equal(t, podReady, false)
+
+
+	spec = &v1.PodSpec{
+		Containers: []v1.Container{
+			{Name: "1234"},
+		},
+	}
+	containerStatuses = []v1.ContainerStatus{}
+
+	podReady = IsPodReady(spec, containerStatuses)
+	assert.Equal(t, podReady, false)
+
+
+}
+
 func TestGeneratePodInitializedCondition(t *testing.T) {
 	noInitContainer := &v1.PodSpec{}
 	oneInitContainer := &v1.PodSpec{

@@ -30,6 +30,49 @@ const (
 	ContainersNotInitialized = "ContainersNotInitialized"
 )
 
+//<author xufei>: compare old containers and new containers
+func IsPodContainersDiff(spec *v1.PodSpec, oldContainerStatuses []v1.ContainerStatus, newContainerStatuses []v1.ContainerStatus) bool {
+	var different bool = false
+
+	for _, container := range spec.Containers {
+		oldContainerStatus, findOldOk := v1.GetContainerStatus(oldContainerStatuses, container.Name)
+		newContainerStatus, findNewOk := v1.GetContainerStatus(newContainerStatuses, container.Name)
+		if findNewOk && findOldOk {
+			if oldContainerStatus.ContainerID != newContainerStatus.ContainerID {
+				different = true
+				break
+			}
+			if oldContainerStatus.Ready != newContainerStatus.Ready {
+				different = true
+				break
+			}
+
+		} else {
+			different = true
+			break
+		}
+	}
+	return different
+}
+
+//<author xufei>: judge pod status by it's containers' status
+func IsPodReady(spec *v1.PodSpec, containerStatuses []v1.ContainerStatus) bool {
+	var ready bool = true
+
+	for _, container := range spec.Containers {
+		if containerStatus, ok := v1.GetContainerStatus(containerStatuses, container.Name); ok {
+			if !containerStatus.Ready {
+				ready = false
+				break
+			}
+		} else {
+			ready = false
+			break
+		}
+	}
+	return ready
+}
+
 // GeneratePodReadyCondition returns ready condition if all containers in a pod are ready, else it
 // returns an unready condition.
 func GeneratePodReadyCondition(spec *v1.PodSpec, containerStatuses []v1.ContainerStatus, podPhase v1.PodPhase) v1.PodCondition {
