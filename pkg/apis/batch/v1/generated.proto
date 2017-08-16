@@ -132,6 +132,12 @@ message JobSpec {
   // executing a job.
   // More info: http://kubernetes.io/docs/user-guide/jobs
   optional k8s.io.kubernetes.pkg.api.v1.PodTemplateSpec template = 6;
+
+  // <Author xufei>: Optinal count relative to failed counts to terminate job
+  optional int32 activeDeadlineCount = 7;
+
+  // <Author xufei>: if job failed, should we delete all success and failed pod ?
+  optional bool failedDeleteAll = 8;
 }
 
 // JobStatus represents the current state of a Job.

@@ -70,6 +70,8 @@ var map_JobSpec = map[string]string{
 	"selector":              "Selector is a label query over pods that should match the pod count. Normally, the system sets this field for you. More info: http://kubernetes.io/docs/user-guide/labels#label-selectors",
 	"manualSelector":        "ManualSelector controls generation of pod labels and pod selectors. Leave `manualSelector` unset unless you are certain what you are doing. When false or unset, the system pick labels unique to this job and appends those labels to the pod template.  When true, the user is responsible for picking unique labels and specifying the selector.  Failure to pick a unique label may cause this and other jobs to not function correctly.  However, You may see `manualSelector=true` in jobs that were created with the old `extensions/v1beta1` API. More info: http://releases.k8s.io/HEAD/docs/design/selector-generation.md",
 	"template":              "Template is the object that describes the pod that will be created when executing a job. More info: http://kubernetes.io/docs/user-guide/jobs",
+	"activeDeadlineCount":   "<Author xufei>: Optinal count relative to failed counts to terminate job",
+	"failedDeleteAll":       "<Author xufei>: if job failed, should we delete all success and failed pod ?",
 }
 
 func (JobSpec) SwaggerDoc() map[string]string {

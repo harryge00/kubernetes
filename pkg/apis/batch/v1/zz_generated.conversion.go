@@ -158,13 +158,17 @@ func autoConvert_v1_JobSpec_To_batch_JobSpec(in *JobSpec, out *batch.JobSpec, s 
 	if err := api_v1.Convert_v1_PodTemplateSpec_To_api_PodTemplateSpec(&in.Template, &out.Template, s); err != nil {
 		return err
 	}
+	out.ActiveDeadlineCount = (*int32)(unsafe.Pointer(in.ActiveDeadlineCount))
+	out.FailedDeleteAll = (*bool)(unsafe.Pointer(in.FailedDeleteAll))
 	return nil
 }
 
 func autoConvert_batch_JobSpec_To_v1_JobSpec(in *batch.JobSpec, out *JobSpec, s conversion.Scope) error {
 	out.Parallelism = (*int32)(unsafe.Pointer(in.Parallelism))
 	out.Completions = (*int32)(unsafe.Pointer(in.Completions))
+	out.ActiveDeadlineCount = (*int32)(unsafe.Pointer(in.ActiveDeadlineCount))
 	out.ActiveDeadlineSeconds = (*int64)(unsafe.Pointer(in.ActiveDeadlineSeconds))
+	out.FailedDeleteAll = (*bool)(unsafe.Pointer(in.FailedDeleteAll))
 	out.Selector = (*meta_v1.LabelSelector)(unsafe.Pointer(in.Selector))
 	out.ManualSelector = (*bool)(unsafe.Pointer(in.ManualSelector))
 	if err := api_v1.Convert_api_PodTemplateSpec_To_v1_PodTemplateSpec(&in.Template, &out.Template, s); err != nil {

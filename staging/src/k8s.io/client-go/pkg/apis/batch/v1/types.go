@@ -74,6 +74,13 @@ type JobSpec struct {
 	// +optional
 	Completions *int32 `json:"completions,omitempty" protobuf:"varint,2,opt,name=completions"`
 
+
+	//<Author xufei>: Optinal count relative to failed counts to terminate job
+	ActiveDeadlineCount *int32 `json:"activeDeadlineCount,omitempty" protobuf:"varint,7,opt,name=activeDeadlineCount"`
+
+	//<Author xufei>: if job failed, should we delete all success and failed pod ?
+	FailedDeleteAll *bool `json:"failedDeleteAll,omitempty" protobuf:"varint,8,opt,name=failedDeleteAll"`
+
 	// Optional duration in seconds relative to the startTime that the job may be active
 	// before the system tries to terminate it; value must be positive integer
 	// +optional

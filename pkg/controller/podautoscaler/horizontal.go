@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/util/podchanges"
 	autoscalingv1 "k8s.io/kubernetes/pkg/apis/autoscaling/v1"
 	autoscalingv2 "k8s.io/kubernetes/pkg/apis/autoscaling/v2alpha1"
 	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
@@ -98,12 +99,12 @@ var downscaleForbiddenWindow = 5 * time.Minute
 var upscaleForbiddenWindow = 3 * time.Minute
 
 func NewHorizontalController(
-	evtNamespacer v1core.EventsGetter,
-	scaleNamespacer extensionsclient.ScalesGetter,
-	hpaNamespacer autoscalingclient.HorizontalPodAutoscalersGetter,
-	replicaCalc *ReplicaCalculator,
-	hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer,
-	resyncPeriod time.Duration,
+evtNamespacer v1core.EventsGetter,
+scaleNamespacer extensionsclient.ScalesGetter,
+hpaNamespacer autoscalingclient.HorizontalPodAutoscalersGetter,
+replicaCalc *ReplicaCalculator,
+hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer,
+resyncPeriod time.Duration,
 ) *HorizontalController {
 	broadcaster := record.NewBroadcaster()
 	// TODO: remove the wrapper when every clients have moved to use the clientset.
@@ -206,7 +207,7 @@ func (a *HorizontalController) processNextWorkItem() bool {
 // of the computed replica counts, a description of the associated metric, and the statuses of all metrics
 // computed.
 func (a *HorizontalController) computeReplicasForMetrics(hpa *autoscalingv2.HorizontalPodAutoscaler, scale *extensions.Scale,
-	metricSpecs []autoscalingv2.MetricSpec) (replicas int32, metric string, statuses []autoscalingv2.MetricStatus, timestamp time.Time, err error) {
+metricSpecs []autoscalingv2.MetricSpec) (replicas int32, metric string, statuses []autoscalingv2.MetricStatus, timestamp time.Time, err error) {
 
 	currentReplicas := scale.Status.Replicas
 
@@ -444,10 +445,23 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 			a.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedRescale", "New size: %d; reason: %s; error: %v", desiredReplicas, rescaleReason, err.Error())
 			return fmt.Errorf("failed to rescale %s: %v", reference, err)
 		}
+		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" && hpa.Spec.ScaleTargetRef.APIVersion == "v1" {
+			rcName := hpa.Spec.ScaleTargetRef.Name
+			rcNamespace := hpa.Namespace
+			podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas , "ScaleBegin")
+		}
 		a.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "SuccessfulRescale", "New size: %d; reason: %s", desiredReplicas, rescaleReason)
 		glog.Infof("Successfull rescale of %s, old size: %d, new size: %d, reason: %s",
 			hpa.Name, currentReplicas, desiredReplicas, rescaleReason)
 	} else {
+		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" && hpa.Spec.ScaleTargetRef.APIVersion == "v1" {
+			if currentReplicas == desiredReplicas {
+				rcName := hpa.Spec.ScaleTargetRef.Name
+				rcNamespace := hpa.Namespace
+				podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas, "ScaleEnd")
+			}
+		}
+
 		glog.V(4).Infof("decided not to scale %s to %v (last scale time was %s)", reference, desiredReplicas, hpa.Status.LastScaleTime)
 		desiredReplicas = currentReplicas
 	}

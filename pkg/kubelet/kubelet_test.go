@@ -135,9 +135,9 @@ func newTestKubelet(t *testing.T, controllerAttachDetachEnabled bool) *TestKubel
 }
 
 func newTestKubeletWithImageList(
-	t *testing.T,
-	imageList []kubecontainer.Image,
-	controllerAttachDetachEnabled bool) *TestKubelet {
+t *testing.T,
+imageList []kubecontainer.Image,
+controllerAttachDetachEnabled bool) *TestKubelet {
 	fakeRuntime := &containertest.FakeRuntime{}
 	fakeRuntime.RuntimeType = "test"
 	fakeRuntime.VersionInfo = "1.5.0"
@@ -153,7 +153,7 @@ func newTestKubeletWithImageList(
 	kubelet.nodeName = types.NodeName(testKubeletHostname)
 	kubelet.runtimeState = newRuntimeState(maxWaitForContainerRuntime)
 	kubelet.runtimeState.setNetworkState(nil)
-	kubelet.networkPlugin, kubelet.networkPlugin2, _ = network.InitNetworkPlugin([]network.NetworkPlugin{}, "", "", nettest.NewFakeHost(nil), componentconfig.HairpinNone, kubelet.nonMasqueradeCIDR, 1440)
+	kubelet.networkPlugin, _ ,_ = network.InitNetworkPlugin([]network.NetworkPlugin{}, "", nettest.NewFakeHost(nil), componentconfig.HairpinNone, kubelet.nonMasqueradeCIDR, 1440, nil)
 	if tempDir, err := ioutil.TempDir("/tmp", "kubelet_test."); err != nil {
 		t.Fatalf("can't make a temp rootdir: %v", err)
 	} else {
@@ -1984,8 +1984,8 @@ func TestSyncPodKillPod(t *testing.T) {
 }
 
 func waitForVolumeUnmount(
-	volumeManager kubeletvolume.VolumeManager,
-	pod *v1.Pod) error {
+volumeManager kubeletvolume.VolumeManager,
+pod *v1.Pod) error {
 	var podVolumes kubecontainer.VolumeMap
 	err := retryWithExponentialBackOff(
 		time.Duration(50*time.Millisecond),
@@ -2011,8 +2011,8 @@ func waitForVolumeUnmount(
 }
 
 func waitForVolumeDetach(
-	volumeName v1.UniqueVolumeName,
-	volumeManager kubeletvolume.VolumeManager) error {
+volumeName v1.UniqueVolumeName,
+volumeManager kubeletvolume.VolumeManager) error {
 	attachedVolumes := []v1.UniqueVolumeName{}
 	err := retryWithExponentialBackOff(
 		time.Duration(50*time.Millisecond),
@@ -2042,9 +2042,9 @@ func retryWithExponentialBackOff(initialDuration time.Duration, fn wait.Conditio
 }
 
 func simulateVolumeInUseUpdate(
-	volumeName v1.UniqueVolumeName,
-	stopCh <-chan struct{},
-	volumeManager kubeletvolume.VolumeManager) {
+volumeName v1.UniqueVolumeName,
+stopCh <-chan struct{},
+volumeManager kubeletvolume.VolumeManager) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {

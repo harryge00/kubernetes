@@ -26,6 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	apivalidation "k8s.io/kubernetes/pkg/api/validation"
 	"k8s.io/kubernetes/pkg/apis/batch"
+	"fmt"
 )
 
 // TODO: generalize for other controller objects that will follow the same pattern, such as ReplicaSet and DaemonSet, and
@@ -104,6 +105,7 @@ func ValidateJobSpec(spec *batch.JobSpec, fldPath *field.Path) field.ErrorList {
 func validateJobSpec(spec *batch.JobSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
+	fmt.Println("validate Job Spec begin")
 	if spec.Parallelism != nil {
 		allErrs = append(allErrs, apivalidation.ValidateNonnegativeField(int64(*spec.Parallelism), fldPath.Child("parallelism"))...)
 	}
@@ -113,6 +115,9 @@ func validateJobSpec(spec *batch.JobSpec, fldPath *field.Path) field.ErrorList {
 	if spec.ActiveDeadlineSeconds != nil {
 		allErrs = append(allErrs, apivalidation.ValidateNonnegativeField(int64(*spec.ActiveDeadlineSeconds), fldPath.Child("activeDeadlineSeconds"))...)
 	}
+	if spec.ActiveDeadlineCount != nil {
+		allErrs = append(allErrs, apivalidation.ValidateNonnegativeField(int64(*spec.ActiveDeadlineCount), fldPath.Child("activeDeadlineCount"))...)
+	}
 
 	allErrs = append(allErrs, apivalidation.ValidatePodTemplateSpec(&spec.Template, fldPath.Child("template"))...)
 	if spec.Template.Spec.RestartPolicy != api.RestartPolicyOnFailure &&
@@ -120,6 +125,7 @@ func validateJobSpec(spec *batch.JobSpec, fldPath *field.Path) field.ErrorList {
 		allErrs = append(allErrs, field.NotSupported(fldPath.Child("template", "spec", "restartPolicy"),
 			spec.Template.Spec.RestartPolicy, []string{string(api.RestartPolicyOnFailure), string(api.RestartPolicyNever)}))
 	}
+	fmt.Println("validate Job Spec end")
 	return allErrs
 }
 

@@ -339,34 +339,62 @@ func (jm *JobController) syncJob(key string) error {
 		// https://github.com/kubernetes/kubernetes/issues/14602 which might give
 		// some sort of solution to above problem.
 		// kill remaining active pods
-		wait := sync.WaitGroup{}
-		errCh := make(chan error, int(active))
-		wait.Add(int(active))
-		for i := int32(0); i < active; i++ {
-			go func(ix int32) {
-				defer wait.Done()
-				if err := jm.podControl.DeletePod(job.Namespace, activePods[ix].Name, &job); err != nil {
-					defer utilruntime.HandleError(err)
-					glog.V(2).Infof("Failed to delete %v, job %q/%q deadline exceeded", activePods[ix].Name, job.Namespace, job.Name)
-					errCh <- err
-				}
-			}(i)
-		}
-		wait.Wait()
-
-		select {
-		case manageJobErr = <-errCh:
-			if manageJobErr != nil {
-				break
+		if job.Spec.FailedDeleteAll == nil || *job.Spec.FailedDeleteAll == false {
+			wait := sync.WaitGroup{}
+			errCh := make(chan error, int(active))
+			wait.Add(int(active))
+			for i := int32(0); i < active; i++ {
+				go func(ix int32) {
+					defer wait.Done()
+					if err := jm.podControl.DeletePod(job.Namespace, activePods[ix].Name, &job); err != nil {
+						defer utilruntime.HandleError(err)
+						glog.V(2).Infof("Failed to delete %v, job %q/%q deadline exceeded", activePods[ix].Name, job.Namespace, job.Name)
+						errCh <- err
+					}
+				}(i)
 			}
-		default:
-		}
+			wait.Wait()
 
-		// update status values accordingly
-		failed += active
-		active = 0
-		job.Status.Conditions = append(job.Status.Conditions, newCondition(batch.JobFailed, "DeadlineExceeded", "Job was active longer than specified deadline"))
-		jm.recorder.Event(&job, v1.EventTypeNormal, "DeadlineExceeded", "Job was active longer than specified deadline")
+			select {
+			case manageJobErr = <-errCh:
+				if manageJobErr != nil {
+					break
+				}
+			default:
+			}
+			// update status values accordingly
+			failed += active
+			active = 0
+			job.Status.Conditions = append(job.Status.Conditions, newCondition(batch.JobFailed, "DeadlineExceeded", "Job was active longer than specified deadline"))
+			jm.recorder.Event(&job, v1.EventTypeNormal, "DeadlineExceeded", "Job was active longer than specified deadline")
+		} else {
+			wait := sync.WaitGroup{}
+			errCh := make(chan error, int(len(pods)))
+			wait.Add(int(len(pods)))
+			for i := int32(0); i < int32(len(pods)); i++ {
+				go func(ix int32) {
+					defer wait.Done()
+					if err := jm.podControl.DeletePod(job.Namespace, pods[ix].Name, &job); err != nil {
+						defer utilruntime.HandleError(err)
+						glog.V(2).Infof("Failed to delete %v, job %q/%q deadline exceeded", pods[ix].Name, job.Namespace, job.Name)
+						errCh <- err
+					}
+				}(i)
+			}
+			wait.Wait()
+			select {
+			case manageJobErr = <-errCh:
+				if manageJobErr != nil {
+					break
+				}
+			default:
+			}
+			// update status values accordingly
+			failed += active
+			active = 0
+			job.Status.Conditions = append(job.Status.Conditions, newCondition(batch.JobFailed, "DeadlineCountExceeded", "Job's pod failed count larger than specified DeadlineCount"))
+			jm.recorder.Event(&job, v1.EventTypeNormal, "DeadlineCountExceeded", "Job's pod failed count larger than specified DeadlineCount")
+		}
 	} else {
 		if jobNeedsSync && job.DeletionTimestamp == nil {
 			active, manageJobErr = jm.manageJob(activePods, succeeded, &job)
@@ -426,14 +454,37 @@ func (jm *JobController) syncJob(key string) error {
 
 // pastActiveDeadline checks if job has ActiveDeadlineSeconds field set and if it is exceeded.
 func pastActiveDeadline(job *batch.Job) bool {
+	timeDeadline := true
+	countDeadline := true
 	if job.Spec.ActiveDeadlineSeconds == nil || job.Status.StartTime == nil {
+		timeDeadline = false
+	}
+
+	if job.Spec.ActiveDeadlineCount == nil {
+		countDeadline = false
+	}
+
+	if !timeDeadline && !countDeadline {
 		return false
 	}
-	now := metav1.Now()
-	start := job.Status.StartTime.Time
-	duration := now.Time.Sub(start)
-	allowedDuration := time.Duration(*job.Spec.ActiveDeadlineSeconds) * time.Second
-	return duration >= allowedDuration
+
+	//<author xufei> we will recaculate
+	timeDeadline = false
+	countDeadline = false
+
+	if job.Spec.ActiveDeadlineSeconds != nil && job.Status.StartTime != nil {
+		now := metav1.Now()
+		start := job.Status.StartTime.Time
+		duration := now.Time.Sub(start)
+		allowedDuration := time.Duration(*job.Spec.ActiveDeadlineSeconds) * time.Second
+		timeDeadline = duration >= allowedDuration
+	}
+	//<author xufei> we judge activedeadlinecount to determime whether we should mark this job failed
+	if job.Spec.ActiveDeadlineCount != nil {
+		countDeadline = *job.Spec.ActiveDeadlineCount <= job.Status.Failed
+	}
+
+	return timeDeadline || countDeadline
 }
 
 func newCondition(conditionType batch.JobConditionType, reason, message string) batch.JobCondition {
@@ -560,7 +611,7 @@ func (jm *JobController) manageJob(activePods []*v1.Pod, succeeded int32, job *b
 
 	select {
 	case err := <-errCh:
-		// all errors have been reported before, we only need to inform the controller that there was an error and it should re-try this job once more next time.
+	// all errors have been reported before, we only need to inform the controller that there was an error and it should re-try this job once more next time.
 		if err != nil {
 			return active, err
 		}

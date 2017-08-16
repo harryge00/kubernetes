@@ -51,6 +51,8 @@ func Convert_batch_JobSpec_To_v1_JobSpec(in *batch.JobSpec, out *JobSpec, s conv
 	out.Parallelism = in.Parallelism
 	out.Completions = in.Completions
 	out.ActiveDeadlineSeconds = in.ActiveDeadlineSeconds
+	out.ActiveDeadlineCount = in.ActiveDeadlineCount
+	out.FailedDeleteAll = in.FailedDeleteAll
 	out.Selector = in.Selector
 	if in.ManualSelector != nil {
 		out.ManualSelector = new(bool)
@@ -69,6 +71,8 @@ func Convert_v1_JobSpec_To_batch_JobSpec(in *JobSpec, out *batch.JobSpec, s conv
 	out.Parallelism = in.Parallelism
 	out.Completions = in.Completions
 	out.ActiveDeadlineSeconds = in.ActiveDeadlineSeconds
+	out.ActiveDeadlineCount = in.ActiveDeadlineCount
+	out.FailedDeleteAll = in.FailedDeleteAll
 	out.Selector = in.Selector
 	if in.ManualSelector != nil {
 		out.ManualSelector = new(bool)

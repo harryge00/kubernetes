@@ -78,7 +78,7 @@ func TestRunOnce(t *testing.T) {
 		cadvisor:            cadvisor,
 		nodeLister:          testNodeLister{},
 		nodeInfo:            testNodeInfo{},
-		statusManager:       status.NewManager(nil, podManager, &statustest.FakePodDeletionSafetyProvider{},nil),
+		statusManager:       status.NewManager(nil, podManager, &statustest.FakePodDeletionSafetyProvider{}, nil),
 		containerRefManager: kubecontainer.NewRefManager(),
 		podManager:          podManager,
 		os:                  &containertest.FakeOS{},
@@ -113,7 +113,7 @@ func TestRunOnce(t *testing.T) {
 		false, /* experimentalCheckNodeCapabilitiesBeforeMount */
 		false /* keepTerminatedPodVolumes */)
 
-	kb.networkPlugin,kb.networkPlugin2, _ = network.InitNetworkPlugin([]network.NetworkPlugin{}, "", "", nettest.NewFakeHost(nil), componentconfig.HairpinNone, kb.nonMasqueradeCIDR, network.UseDefaultMTU)
+	kb.networkPlugin, _,_ = network.InitNetworkPlugin([]network.NetworkPlugin{}, "", nettest.NewFakeHost(nil), componentconfig.HairpinNone, kb.nonMasqueradeCIDR, network.UseDefaultMTU,nil)
 	// TODO: Factor out "StatsProvider" from Kubelet so we don't have a cyclic dependency
 	volumeStatsAggPeriod := time.Second * 10
 	kb.resourceAnalyzer = stats.NewResourceAnalyzer(kb, volumeStatsAggPeriod, kb.containerRuntime)

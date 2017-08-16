@@ -99,10 +99,16 @@ type JobSpec struct {
 	// +optional
 	Completions *int32
 
+	//<Author xufei>: Optinal count relative to failed counts to terminate job
+	ActiveDeadlineCount *int32
+
 	// Optional duration in seconds relative to the startTime that the job may be active
 	// before the system tries to terminate it; value must be positive integer
 	// +optional
 	ActiveDeadlineSeconds *int64
+
+	//<Author xufei>: if job failed, should we delete all success and failed pod ?
+	FailedDeleteAll *bool
 
 	// Selector is a label query over pods that should match the pod count.
 	// Normally, the system sets this field for you.
