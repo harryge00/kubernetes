@@ -417,6 +417,44 @@ func (m *manager) syncBatch() {
 	}
 }
 
+func (m *manager) recorderPodEvents(pod *v1.Pod, oldStatus v1.PodStatus, newStatus v1.PodStatus) {
+	if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
+		ref := pod.OwnerReferences[0]
+		if ref.Kind == "ReplicationController" {
+			if IsPodReady(&pod.Spec, oldStatus.ContainerStatuses) != IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
+				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
+					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
+				} else {
+					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
+				}
+			} else {
+				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
+					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
+				}
+			}
+		}
+		if ref.Kind == "Job" {
+			if IsPodReady(&pod.Spec, oldStatus.ContainerStatuses) != IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
+				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
+					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
+				} else {
+					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+				}
+			} else {
+				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
+					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+				}
+			}
+
+			if oldStatus.Phase != pod.Status.Phase &&
+				pod.Status.Phase != v1.PodRunning &&
+				pod.Status.Phase != v1.PodPending  {
+				util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", string(pod.Status.Phase))
+			}
+		}
+	}
+}
+
 // syncPod syncs the given status with the API server. The caller must not hold the lock.
 func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 	if !m.needsUpdate(uid, status) {
@@ -453,33 +491,8 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 				// We don't handle graceful deletion of mirror pods.
 				return
 			}
-			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
-				ref := pod.OwnerReferences[0]
-				if ref.Kind == "ReplicationController" {
-					if v1.IsPodReadyConditionTrue(tmpPodStatus) != v1.IsPodReadyConditionTrue(status.status) {
-						if v1.IsPodReady(pod) {
-							util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
-						} else {
-							util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
-						}
-					}
-				}
-				if ref.Kind == "Job" {
-					if v1.IsPodReadyConditionTrue(tmpPodStatus) != v1.IsPodReadyConditionTrue(status.status) {
-						if v1.IsPodReady(pod) {
-							util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
-						} else if tmpPodStatus.Phase != pod.Status.Phase && pod.Status.Phase == v1.PodPending {
-							util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
-						}
-					}
 
-					if tmpPodStatus.Phase != pod.Status.Phase &&
-						pod.Status.Phase != v1.PodRunning &&
-						pod.Status.Phase != v1.PodPending  {
-						util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", string(pod.Status.Phase))
-					}
-				}
-			}
+			m.recorderPodEvents(pod, tmpPodStatus, pod.Status)
 
 			if !m.podDeletionSafety.OkToDeletePod(pod) {
 				return
