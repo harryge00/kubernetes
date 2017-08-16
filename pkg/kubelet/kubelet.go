@@ -17,6 +17,7 @@ limitations under the License.
 package kubelet
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -171,6 +172,30 @@ type SyncHandler interface {
 	HandlePodReconcile(pods []*v1.Pod)
 	HandlePodSyncs(pods []*v1.Pod)
 	HandlePodCleanups() error
+}
+
+// Used to patch second network card
+type Transformation struct {
+	EventType string `json:"eventType,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	PodName string	`json:"podName,omitempty"`
+	RcName string	`json:"rcName,omitempty"`
+	Action string `json:"action,omitempty"`
+	Ip string     `json:"ip,omitempty"`
+	NetDevName string `json:"netDevName,omitempty"`
+	NetDevType string `json:"netDevType,omitempty"`
+}
+
+type Data struct {
+	MetaData  Metadata   `json:"metadata"`
+}
+
+type Metadata struct {
+	Labels     Label     `json:"labels"`
+}
+
+type Label struct {
+	Ips      string      `json:"ips"`
 }
 
 // Option is a functional option type for Kubelet
@@ -495,10 +520,12 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	}
 	glog.Infof("Hairpin mode set to %q", klet.hairpinMode)
 
-	if plug, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
+	//if plug, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
+	if plug, plug2, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, kubeCfg.MacvlanConfigFile, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
 		return nil, err
 	} else {
 		klet.networkPlugin = plug
+		klet.networkPlugin2 = plug2
 	}
 
 	machineInfo, err := klet.GetCachedMachineInfo()
@@ -531,6 +558,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		HairpinMode:       klet.hairpinMode,
 		NonMasqueradeCIDR: klet.nonMasqueradeCIDR,
 		PluginName:        kubeCfg.NetworkPluginName,
+		MacvlanPluginConfig: kubeCfg.MacvlanConfigFile,
 		PluginConfDir:     kubeCfg.CNIConfDir,
 		PluginBinDir:      binDir,
 		MTU:               int(kubeCfg.NetworkPluginMTU),
@@ -562,6 +590,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 			if err := ds.Start(); err != nil {
 				return nil, err
 			}
+
 			// For now, the CRI shim redirects the streaming requests to the
 			// kubelet, which handles the requests using DockerService..
 			klet.criHandler = ds
@@ -601,6 +630,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 			klet.podManager,
 			kubeDeps.OSInterface,
 			klet.networkPlugin,
+			klet.networkPlugin2,
 			klet,
 			klet.httpClient,
 			imageBackOff,
@@ -632,6 +662,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 				ContainerLogsDir,
 				kubeDeps.OSInterface,
 				klet.networkPlugin,
+				klet.networkPlugin2,
 				klet,
 				klet.httpClient,
 				dockerExecHandler,
@@ -911,6 +942,9 @@ type Kubelet struct {
 
 	// Network plugin.
 	networkPlugin network.NetworkPlugin
+
+	// Network plugin2.
+	networkPlugin2 network.NetworkPlugin
 
 	// Handles container probing.
 	probeManager prober.Manager
@@ -1300,6 +1334,7 @@ func (kl *Kubelet) GetKubeClient() clientset.Interface {
 	return kl.kubeClient
 }
 
+
 // GetClusterDNS returns a list of the DNS servers and a list of the DNS search
 // domains of the cluster.
 func (kl *Kubelet) GetClusterDNS(pod *v1.Pod) ([]string, []string, bool, error) {
@@ -1584,10 +1619,31 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 	}
 
 	// Call the container runtime's SyncPod callback
-	result := kl.containerRuntime.SyncPod(pod, apiPodStatus, podStatus, pullSecrets, kl.backOff)
+	oldone := pod.ObjectMeta.Labels["ips"]
+	result:= kl.containerRuntime.SyncPod(pod, apiPodStatus, podStatus, pullSecrets, kl.backOff)
 	kl.reasonCache.Update(pod.UID, result)
 	if err = result.Error(); err != nil {
 		return err
+	}
+
+	if oldone != pod.ObjectMeta.Labels["ips"] {
+		data2 := Data{
+			MetaData: Metadata{
+				Labels: Label{
+					Ips: pod.ObjectMeta.Labels["ips"],
+				},
+			},
+		}
+		buf, err := json.Marshal(&data2)
+		if err != nil {
+			fmt.Errorf("Failed to marshal data2 in kubelet, please check %v", err)
+			return err
+		}
+		_, err = kl.kubeClient.Core().Pods(pod.Namespace).Patch(pod.Name, types.StrategicMergePatchType, buf)
+
+		if err = result.Error(); err != nil {
+			return err
+		}
 	}
 
 	// early successful exit if pod is not bandwidth-constrained

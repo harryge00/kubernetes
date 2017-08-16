@@ -41,6 +41,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/network/kubenet"
 	"k8s.io/kubernetes/pkg/kubelet/server/streaming"
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
+	"k8s.io/kubernetes/pkg/kubelet/network/macvlan"
 )
 
 const (
@@ -94,6 +95,9 @@ type NetworkPluginSettings struct {
 	NonMasqueradeCIDR string
 	// PluginName is the name of the plugin, runtime shim probes for
 	PluginName string
+
+	//Peiqi added for macvlan plugin
+	MacvlanPluginConfig string
 	// PluginBinDir is the directory in which the binaries for the plugin with
 	// PluginName is kept. The admin is responsible for provisioning these
 	// binaries before-hand.
@@ -173,18 +177,24 @@ func NewDockerService(client dockertools.DockerInterface, seccompProfileRoot str
 	}
 	// dockershim currently only supports CNI plugins.
 	cniPlugins := cni.ProbeNetworkPlugins(pluginSettings.PluginConfDir, pluginSettings.PluginBinDir)
+	macPlugins := macvlan.ProbeNetworkPlugins()
 	cniPlugins = append(cniPlugins, kubenet.NewPlugin(pluginSettings.PluginBinDir))
 	netHost := &dockerNetworkHost{
 		pluginSettings.LegacyRuntimeHost,
 		&namespaceGetter{ds},
 		&portMappingGetter{ds},
 	}
-	plug, err := network.InitNetworkPlugin(cniPlugins, pluginSettings.PluginName, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
+	//glog.Infof("let's testing okokok cniPlugins %s , %s %s %s %s", cniPlugins, pluginSettings.PluginName, pluginSettings, pluginSettings.MacvlanPluginConfig, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
+	plug, plug2, err := network.InitNetworkPlugin(macPlugins, pluginSettings.PluginName, pluginSettings.MacvlanPluginConfig, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("didn't find compatible CNI plugin with given settings %+v: %v", pluginSettings, err)
 	}
-	ds.network = network.NewPluginManager(plug)
-	glog.Infof("Docker cri networking managed by %v", plug.Name())
+	ds.networkPlugin = network.NewPluginManager(plug)
+	ds.macvlanPlugin = network.NewPluginManager(plug2)
+
+	//ds.networkPlugin = plug
+	//ds.networkPlugin = plug2
+	glog.Infof("Docker cri networking managed by %v", plug2.Name())
 
 	// NOTE: cgroup driver is only detectable in docker 1.11+
 	cgroupDriver := defaultCgroupDriver
@@ -229,7 +239,8 @@ type dockerService struct {
 	podSandboxImage    string
 	streamingRuntime   *streamingRuntime
 	streamingServer    streaming.Server
-	network            *network.PluginManager
+	networkPlugin      *network.PluginManager
+	macvlanPlugin      *network.PluginManager
 	containerManager   cm.ContainerManager
 	// cgroup driver used by Docker runtime.
 	cgroupDriver      string
@@ -275,10 +286,10 @@ func (ds *dockerService) UpdateRuntimeConfig(runtimeConfig *runtimeapi.RuntimeCo
 		return
 	}
 	glog.Infof("docker cri received runtime config %+v", runtimeConfig)
-	if ds.network != nil && runtimeConfig.NetworkConfig.PodCidr != "" {
+	if ds.networkPlugin != nil && runtimeConfig.NetworkConfig.PodCidr != "" {
 		event := make(map[string]interface{})
 		event[network.NET_PLUGIN_EVENT_POD_CIDR_CHANGE_DETAIL_CIDR] = runtimeConfig.NetworkConfig.PodCidr
-		ds.network.Event(network.NET_PLUGIN_EVENT_POD_CIDR_CHANGE, event)
+		ds.networkPlugin.Event(network.NET_PLUGIN_EVENT_POD_CIDR_CHANGE, event)
 	}
 	return
 }
@@ -344,7 +355,7 @@ func (ds *dockerService) Status() (*runtimeapi.RuntimeStatus, error) {
 		runtimeReady.Reason = "DockerDaemonNotReady"
 		runtimeReady.Message = fmt.Sprintf("docker: failed to get docker version: %v", err)
 	}
-	if err := ds.network.Status(); err != nil {
+	if err := ds.networkPlugin.Status(); err != nil {
 		networkReady.Status = false
 		networkReady.Reason = "NetworkPluginNotReady"
 		networkReady.Message = fmt.Sprintf("docker: network plugin is not ready: %v", err)

@@ -43,6 +43,7 @@ func NewFakeDockerManager(
 	containerLogsDir string,
 	osInterface kubecontainer.OSInterface,
 	networkPlugin network.NetworkPlugin,
+	macvlanPlugin network.NetworkPlugin,
 	runtimeHelper kubecontainer.RuntimeHelper,
 	httpClient kubetypes.HttpGetter, imageBackOff *flowcontrol.Backoff) *DockerManager {
 
@@ -50,7 +51,7 @@ func NewFakeDockerManager(
 	fakeProcFs := procfs.NewFakeProcFS()
 	fakePodGetter := &fakePodGetter{}
 	dm := NewDockerManager(client, recorder, livenessManager, containerRefManager, fakePodGetter, machineInfo, podInfraContainerImage, qps,
-		burst, containerLogsDir, osInterface, networkPlugin, runtimeHelper, httpClient, &NativeExecHandler{},
+		burst, containerLogsDir, osInterface, networkPlugin, macvlanPlugin, runtimeHelper, httpClient, &NativeExecHandler{},
 		fakeOOMAdjuster, fakeProcFs, false, imageBackOff, false, false, true, "/var/lib/kubelet/seccomp")
 	dm.dockerPuller = &FakeDockerPuller{client: client}
 

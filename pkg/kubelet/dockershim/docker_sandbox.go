@@ -63,9 +63,8 @@ func (ds *dockerService) RunPodSandbox(config *runtimeapi.PodSandboxConfig) (str
 	// see: http://kubernetes.io/docs/user-guide/images/#configuring-nodes-to-authenticate-to-a-private-repository
 	// Only pull sandbox image when it's not present - v1.PullIfNotPresent.
 	if err := ensureSandboxImageExists(ds.client, image); err != nil {
-		return "", err
+		return "",  err
 	}
-
 	// Step 2: Create the sandbox container.
 	createConfig, err := ds.makeSandboxDockerConfig(config, image)
 	if err != nil {
@@ -123,13 +122,23 @@ func (ds *dockerService) RunPodSandbox(config *runtimeapi.PodSandboxConfig) (str
 	// on the host as well, to satisfy parts of the pod spec that aren't
 	// recognized by the CNI standard yet.
 	cID := kubecontainer.BuildContainerID(runtimeName, createResp.ID)
-	err = ds.network.SetUpPod(config.GetMetadata().Namespace, config.GetMetadata().Name, cID, config.Annotations)
+	err = ds.networkPlugin.SetUpPod(config.GetMetadata().Namespace, config.GetMetadata().Name, cID, config.Annotations)
 	if err != nil {
 		// TODO(random-liu): Do we need to teardown network here?
 		if err := ds.client.StopContainer(createResp.ID, defaultSandboxGracePeriod); err != nil {
 			glog.Warningf("Failed to stop sandbox container %q for pod %q: %v", createResp.ID, config.Metadata.Name, err)
 		}
 	}
+
+	/*label, err := ds.addNetCard(config, cID)
+	if label != "" {
+		//pod.ObjectMeta.Labels["ips"] = label
+		config.Labels["ips"] = label
+	}
+	if err != nil {
+		glog.Infof("Failed to syn the second net card in the pod, %v", err)
+		return createResp.ID, err
+	}*/
 	return createResp.ID, err
 }
 
@@ -197,9 +206,14 @@ func (ds *dockerService) StopPodSandbox(podSandboxID string) error {
 	errList := []error{}
 	if needNetworkTearDown {
 		cID := kubecontainer.BuildContainerID(runtimeName, podSandboxID)
-		if err := ds.network.TearDownPod(namespace, name, cID); err != nil {
+		if err := ds.networkPlugin.TearDownPod(namespace, name, cID); err != nil {
 			errList = append(errList, err)
 		}
+		//do not registry error info.
+		//if err := ds.delNetCard(namespace, name, cID); err != nil {
+			//errList = append(errList, err)
+		//}
+
 	}
 	if err := ds.client.StopContainer(podSandboxID, defaultSandboxGracePeriod); err != nil {
 		glog.Errorf("Failed to stop sandbox %q: %v", podSandboxID, err)
@@ -222,6 +236,17 @@ func (ds *dockerService) RemovePodSandbox(podSandboxID string) error {
 	if err := ds.checkpointHandler.RemoveCheckpoint(podSandboxID); err != nil {
 		errs = append(errs, err)
 	}
+
+	//var checkpoint *PodSandboxCheckpoint
+	//checkpoint, err := ds.checkpointHandler.GetCheckpoint(podSandboxID)
+	//if err != nil {
+	//	errs = append(errs, err)
+	//}
+	//cID := kubecontainer.BuildContainerID(runtimeName, podSandboxID)
+	//err != ds.delNetCard(checkpoint,cID)
+	//if err != nil {
+	//	errs = append(errs, err)
+	//}
 	return utilerrors.NewAggregate(errs)
 	// TODO: remove all containers in the sandbox.
 }
@@ -234,7 +259,7 @@ func (ds *dockerService) getIPFromPlugin(sandbox *dockertypes.ContainerJSON) (st
 	}
 	msg := fmt.Sprintf("Couldn't find network status for %s/%s through plugin", metadata.Namespace, metadata.Name)
 	cID := kubecontainer.BuildContainerID(runtimeName, sandbox.ID)
-	networkStatus, err := ds.network.GetPodNetworkStatus(metadata.Namespace, metadata.Name, cID)
+	networkStatus, err := ds.networkPlugin.GetPodNetworkStatus(metadata.Namespace, metadata.Name, cID)
 	if err != nil {
 		// This might be a sandbox that somehow ended up without a default
 		// interface (eth0). We can't distinguish this from a more serious
@@ -453,7 +478,7 @@ func (ds *dockerService) applySandboxLinuxOptions(hc *dockercontainer.HostConfig
 	}
 	hc.CgroupParent = cgroupParent
 	// Apply security context.
-	applySandboxSecurityContext(lc, createConfig.Config, hc, ds.network, separator)
+	applySandboxSecurityContext(lc, createConfig.Config, hc, ds.networkPlugin, separator)
 
 	return nil
 }
@@ -587,3 +612,107 @@ func toCheckpointProtocol(protocol runtimeapi.Protocol) Protocol {
 	glog.Warningf("Unknown protocol %q: defaulting to TCP", protocol)
 	return protocolTCP
 }
+
+// To add a netcard, we demand IP GW POD NAMESPACE CONTAINERID and flag...
+/*func (ds *dockerService) addNetCard(config *runtimeapi.PodSandboxConfig, containerID kubecontainer.ContainerID) (string, error){
+	//label := pod.ObjectMeta.Labels["network"]
+	label := config.Labels["network"]
+	if label == "" {
+		// if not specified, do nothing
+		_, err := ds.macvlanPlugin.GetPodNetworkStatus(config.GetMetadata().Namespace, config.GetMetadata().Name, containerID)
+		if err != nil {
+			glog.Errorf("checking macvlan Network info: %v; Skipping pod %s", err, config.GetMetadata().Name)
+		}
+		err = ds.delNetCard(config, containerID)
+		if err != nil {
+			glog.Errorf("delete macvlan card for updating macvlan Network error: %v; Skipping pod %s", err, config.GetMetadata().Name)
+			return "dev-empty", err
+		}
+	}
+	err := ds.macvlanPlugin.PluginLabels(label)
+	if err != nil {
+		glog.Errorf("failed to pass label %v", err)
+		return "dev-empty", err
+	}
+	var flag bool = false
+	var dlabel string
+	// if label is set, and in the syn period.
+	podInfraContainer, err := ds.client.InspectContainer(string(containerID.ID))
+	glog.V(4).Infof("checking podInfraContainer after inspectContainer %v for macvlan, pod", podInfraContainer)
+	if err != nil {
+		glog.Errorf("Failed to inspect pod infra container: %v; Skipping pod %q", err, config.GetMetadata().Name)
+	}
+
+	if ds.macvlanPlugin.PluginName() == "macvlan" {
+		// here, we get the second network card ip to check its status.
+		stat, err := ds.macvlanPlugin.GetPodNetworkStatus(config.GetMetadata().Namespace, config.GetMetadata().Name, containerID)
+		if err != nil {
+			glog.Infof("Peiqi ensuring macvlan Network Info: %v; Skipping pod %s", err, config.GetMetadata().Name)
+			flag = true
+		}
+
+		if flag {
+			err = ds.macvlanPlugin.SetUpPod(config.GetMetadata().Namespace, config.GetMetadata().Name, containerID, config.Annotations)
+			if err != nil {
+				fmt.Printf("Peiqi failed to setup pod for macvlan netcard %v", err)
+				return "dev-empty", err
+			}
+
+			//check part
+			podInfraContainer, err := ds.client.InspectContainer(string(containerID.ID))
+			glog.V(4).Infof("checking podInfraContainer after inspectContainer %v for macvlan, pod", podInfraContainer)
+			if err != nil {
+				glog.Errorf("Peiqi Failed to inspect pod infra container: %v; Skipping pod %s", err, config.GetMetadata().Name)
+			}
+
+			// here, we get the second network card ip to check its status.
+			PodStatus, err := ds.macvlanPlugin.GetPodNetworkStatus(config.GetMetadata().Namespace, config.GetMetadata().Name, containerID)
+			PodIP := PodStatus.IP
+			if err != nil {
+				glog.Errorf("Peiqi Network error: %v; Skipping pod %s", err, config.GetMetadata().Name)
+			}
+			glog.Infof("Peiqi Determined pod ip after infra change: %s: %q", config.GetMetadata().Name, PodIP)
+
+			// After setup the card, we should add a label to registry the IP
+			//labelsbefore := pod.ObjectMeta.GetLabels()
+			labelsbefore := config.GetLabels()
+			for key, value := range labelsbefore {
+				glog.Infof("key and value before is %v and %v", key, value)
+			}
+
+			dev := strings.Split(label, "-")[0]
+			dlabel = fmt.Sprintf("%s-%s", dev, PodIP.String())
+			//pod.ObjectMeta.Labels["ips"] = dlabel
+			config.Labels["ips"] = dlabel
+			//peiqi testing label functionality
+			for key, value := range config.GetLabels(){
+				glog.Infof("key and value in lables are %v and %v", key, value)
+			}
+
+			return dlabel, nil
+		}
+		return fmt.Sprintf("%s-%s", strings.Split(label, "-")[0], stat.IP.String()), nil
+	}
+	return "mmp", nil
+}*/
+
+/*func (ds *dockerService) delNetCard(Namespace, Name string, containerID kubecontainer.ContainerID) error {
+
+	podInfraContainer, err := ds.client.InspectContainer(string(containerID.ID))
+	glog.V(4).Infof("checking podInfraContainer after inspectContainer %v for macvlan, pod", podInfraContainer)
+	if err != nil {
+		glog.Errorf("Failed to inspect pod infra container: %v; Skipping pod %s", err,Name)
+		return err
+	}
+
+	if ds.macvlanPlugin.PluginName() == "macvlan" {
+		// here, we get the second network card ip to check its status.
+		err := ds.macvlanPlugin.TearDownPod(Namespace, Name, containerID)
+		if err != nil {
+			glog.Errorf("Failed to delete the IP and tear down the Pod, please check.")
+			return  err
+		}
+
+	}
+	return nil
+}*/

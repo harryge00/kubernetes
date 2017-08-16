@@ -17,9 +17,11 @@ limitations under the License.
 package kuberuntime
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -44,7 +46,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	util "k8s.io/kubernetes/pkg/util/podchanges"
 	utilversion "k8s.io/kubernetes/pkg/util/version"
+	"sync"
 )
 
 const (
@@ -59,6 +63,18 @@ const (
 	versionCacheTTL = 60 * time.Second
 )
 
+// Used to patch second network card
+type Transformation struct {
+	EventType string `json:"eventType,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	PodName string	`json:"podName,omitempty"`
+	RcName string	`json:"rcName,omitempty"`
+	Action string `json:"action,omitempty"`
+	Ip string     `json:"ip,omitempty"`
+	NetDevName string `json:"netDevName,omitempty"`
+	NetDevType string `json:"netDevType,omitempty"`
+}
+
 var (
 	// ErrVersionNotSupported is returned when the api version of runtime interface is not supported
 	ErrVersionNotSupported = errors.New("Runtime api version is not supported")
@@ -70,6 +86,7 @@ type podGetter interface {
 }
 
 type kubeGenericRuntimeManager struct {
+	netpluginLock       sync.Mutex
 	runtimeName         string
 	recorder            record.EventRecorder
 	osInterface         kubecontainer.OSInterface
@@ -97,7 +114,13 @@ type kubeGenericRuntimeManager struct {
 	cpuCFSQuota bool
 
 	// Network plugin.
+	//networkPlugin network.NetworkPlugin
+
+	// Network plugin manager.
 	networkPlugin network.NetworkPlugin
+	macvlanPlugin network.NetworkPlugin
+	// Macvlan plugin
+	//macvlanPlugin network.NetworkPlugin
 
 	// wrapped image puller.
 	imagePuller images.ImageManager
@@ -125,6 +148,7 @@ func NewKubeGenericRuntimeManager(
 	podGetter podGetter,
 	osInterface kubecontainer.OSInterface,
 	networkPlugin network.NetworkPlugin,
+	macvlanPlugin network.NetworkPlugin,
 	runtimeHelper kubecontainer.RuntimeHelper,
 	httpClient types.HttpGetter,
 	imageBackOff *flowcontrol.Backoff,
@@ -143,6 +167,7 @@ func NewKubeGenericRuntimeManager(
 		machineInfo:         machineInfo,
 		osInterface:         osInterface,
 		networkPlugin:       networkPlugin,
+		macvlanPlugin:       macvlanPlugin,
 		runtimeHelper:       runtimeHelper,
 		runtimeService:      newInstrumentedRuntimeService(runtimeService),
 		imageService:        newInstrumentedImageManagerService(imageService),
@@ -579,6 +604,10 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			glog.V(3).Infof("Killing unwanted container %q(id=%q) for pod %q", containerInfo.name, containerID, format.Pod(pod))
 			killContainerResult := kubecontainer.NewSyncResult(kubecontainer.KillContainer, containerInfo.name)
 			result.AddSyncResult(killContainerResult)
+			err := m.delNetCard(pod, containerID)
+			if err != nil {
+				glog.Errorf("Failed to delete the second card %s before kill the container", err)
+			}
 			if err := m.killContainer(pod, containerID, containerInfo.name, containerInfo.message, nil); err != nil {
 				killContainerResult.Fail(kubecontainer.ErrKillContainer, err.Error())
 				glog.Errorf("killContainer %q(id=%q) for pod %q failed: %v", containerInfo.name, containerID, format.Pod(pod), err)
@@ -627,6 +656,8 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			result.Fail(err)
 			return
 		}
+
+
 
 		// If we ever allow updating a pod from non-host-network to
 		// host-network, we may use a stale IP.
@@ -700,6 +731,20 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		return
 	}
 
+	if podContainerChanges.CreateSandbox {
+		if v1.IsPodReady(pod) {
+			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
+				ref := pod.OwnerReferences[0]
+				if ref.Kind == "ReplicationController" {
+					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
+				}
+				if ref.Kind == "Job" {
+					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+				}
+			}
+		}
+	}
+
 	// Step 6: start containers in podContainerChanges.ContainersToStart.
 	for idx := range podContainerChanges.ContainersToStart {
 		container := &pod.Spec.Containers[idx]
@@ -718,6 +763,57 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			startContainerResult.Fail(err, msg)
 			utilruntime.HandleError(fmt.Errorf("container start failed: %v: %s", err, msg))
 			continue
+		}
+	}
+
+	if podContainerChanges.CreateSandbox {
+		if v1.IsPodReady(pod) {
+			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
+				ref := pod.OwnerReferences[0]
+				if ref.Kind == "ReplicationController" {
+					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
+				}
+				if ref.Kind == "Job" {
+					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
+				}
+			}
+		}
+	}
+
+	containerId := kubecontainer.ContainerID{
+		Type: "docker",
+		ID: podSandboxID,
+	}
+	oldpod := pod.ObjectMeta.Labels["ips"]
+	label, err := m.addNetCard(pod, containerId)
+	pod.ObjectMeta.Labels["ips"] = label
+	if err != nil {
+		glog.Infof("Failed to syn the second net card in the pod, %v", err)
+	}
+	if pod.ObjectMeta.Labels["ips"] != oldpod {
+		// Used to send event message to apiserver
+		ref := &v1.ObjectReference{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,}
+
+		ret := strings.Split(label,"-")
+		mess := Transformation{
+			EventType: "RcUpdate",
+			Action: "PodNetDevSync",
+			Ip:  ret[1],
+			Namespace: pod.Namespace,
+			PodName: pod.Name,
+			RcName: "",
+			NetDevName: ret[0],
+			NetDevType: "",
+		}
+		buffer, err := json.Marshal(&mess)
+		if err != nil {
+			glog.Errorf("Failed to marshal buffer in kubelet, please check %v", err)
+		}
+		m.recorder.Eventf(ref, api.EventTypeNormal, "RcUpdate", "%s", string(buffer))
+		if err != nil {
+			fmt.Errorf("peiqi Failed to update pods %v", err)
 		}
 	}
 
@@ -889,7 +985,6 @@ func (m *kubeGenericRuntimeManager) GetPodContainerID(pod *kubecontainer.Pod) (k
 		glog.Errorf("No sandboxes are found for pod %q", formattedPod)
 		return kubecontainer.ContainerID{}, fmt.Errorf("sandboxes for pod %q not found", formattedPod)
 	}
-
 	// return sandboxID of the first sandbox since it is the latest one
 	return pod.Sandboxes[0].ID, nil
 }
@@ -906,4 +1001,95 @@ func (m *kubeGenericRuntimeManager) UpdatePodCIDR(podCIDR string) error {
 				PodCidr: podCIDR,
 			},
 		})
+}
+
+// To add a netcard, we demand IP GW POD NAMESPACE CONTAINERID and flag...
+func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) (string, error){
+	m.netpluginLock.Lock()
+	defer  m.netpluginLock.Unlock()
+	label := pod.ObjectMeta.Labels["network"]
+	label2 := pod.ObjectMeta.Labels["ips"]
+	devips := strings.Split(label2, "-")
+	dev := devips[0]
+	if label == "" {
+		if label2 == "" || devips[1] == "none" {
+			return dev+"-none", nil
+		}
+		if devips[1] != "empty" {
+			m.macvlanPlugin.Labels(dev)
+			// if not specified, do nothing
+			_, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+			if err != nil {
+				glog.Errorf("checking macvlan Network info: %v; Skipping pod %s", err, pod.Name)
+			}
+			err = m.delNetCard(pod, containerID)
+			if err != nil {
+				glog.Errorf("delete macvlan card for updating macvlan Network error: %v; Skipping pod %s", err, pod.Name)
+				return dev+"-empty", err
+			}
+		}
+	} else {
+		err := m.macvlanPlugin.Labels(label)
+		if err != nil {
+			glog.Errorf("failed to pass label %v", err)
+			return dev + "-empty", err
+		}
+
+		var flag bool = false
+		var dlabel string
+		// if label is set, and in the syn period.
+		if m.macvlanPlugin.Name() == "macvlan" {
+			// here, we get the second network card ip to check its status.
+			stat, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+			if err != nil {
+				glog.Infof("Peiqi ensuring macvlan Network Info: %v; Skipping pod %s", err, pod.Name)
+				flag = true
+			}
+			if flag {
+				err = m.macvlanPlugin.SetUpPod(pod.Namespace, pod.Name, containerID, pod.Annotations)
+				if err != nil {
+					fmt.Printf("Peiqi failed to setup pod for macvlan netcard %v", err)
+					return dev + "-empty", err
+				}
+
+				// here, we get the second network card ip to check its status.
+				PodStatus, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+				PodIP := PodStatus.IP
+				if err != nil {
+					glog.Errorf("Peiqi Network error: %v; Skipping pod %s", err, pod.Name)
+				}
+				glog.Infof("Peiqi Determined pod ip after infra change: %s: %q", pod.Name, PodIP)
+
+				// After setup the card, we should add a label to registry the IP
+				labelsbefore := pod.GetLabels()
+				for key, value := range labelsbefore {
+					glog.Infof("key and value before is %v and %v", key, value)
+				}
+
+				dev := strings.Split(label, "-")[0]
+				dlabel = fmt.Sprintf("%s-%s", dev, PodIP.String())
+				pod.ObjectMeta.Labels["ips"] = dlabel
+				for key, value := range pod.GetLabels() {
+					glog.Infof("key and value in lables are %v and %v", key, value)
+				}
+
+				return dlabel, nil
+			}
+			return fmt.Sprintf("%s-%s", strings.Split(label, "-")[0], stat.IP.String()), nil
+		}
+	}
+	return dev+"-empty", nil
+}
+
+func (ds *kubeGenericRuntimeManager) delNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) error {
+	if ds.macvlanPlugin.Name() == "macvlan" {
+		// here, we get the second network card ip to check its status.
+		err := ds.macvlanPlugin.TearDownPod(pod.Namespace, pod.Name, containerID)
+		if err != nil {
+			glog.Errorf("Failed to delete the IP, please check.")
+			return  err
+		}
+
+	}
+	return nil
 }

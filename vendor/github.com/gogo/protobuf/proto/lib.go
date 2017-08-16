@@ -892,3 +892,4 @@ func isProto3Zero(v reflect.Value) bool {
 // ProtoPackageIsVersion1 is referenced from generated protocol buffer files
 // to assert that that code is compatible with this version of the proto package.
 const GoGoProtoPackageIsVersion1 = true
+const GoGoProtoPackageIsVersion2 = true
