@@ -53,7 +53,7 @@ func RecorcRCAutoScaleEvent(recorder record.EventRecorder, rcName, namespace, ev
 	}
 	message, _ := json.Marshal(autoScaleInfo)
 
-	recorder.Eventf(ref, api.EventTypeNormal, "AutoScale", "%s", string(message))
+	recorder.Eventf(ref, api.EventTypeNormal, "RcUpdate", "%s", string(message))
 }
 
 func RecordRCEvent(recorder record.EventRecorder, rcName, namespace, podName, event, action string) {

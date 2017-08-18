@@ -12,7 +12,8 @@ func init() {
 
 }
 
-type FakeEventRecorder struct {}
+type FakeEventRecorder struct {
+}
 
 func (record FakeEventRecorder) Event(object runtime.Object, eventtype, reason, message string) {
 	fmt.Println(eventtype)

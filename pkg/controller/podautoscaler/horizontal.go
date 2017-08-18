@@ -46,6 +46,8 @@ import (
 	autoscalinginformers "k8s.io/kubernetes/pkg/client/informers/informers_generated/externalversions/autoscaling/v1"
 	autoscalinglisters "k8s.io/kubernetes/pkg/client/listers/autoscaling/v1"
 	"k8s.io/kubernetes/pkg/controller"
+
+	"github.com/golang/groupcache/lru"
 )
 
 const (
@@ -55,6 +57,8 @@ const (
 
 	scaleUpLimitFactor  = 2
 	scaleUpLimitMinimum = 4
+
+	LruCacheSize =  10000
 )
 
 func calculateScaleUpLimit(currentReplicas int32) int32 {
@@ -93,6 +97,7 @@ type HorizontalController struct {
 
 	// Controllers that need to be synced
 	queue workqueue.RateLimitingInterface
+	lru		*lru.Cache
 }
 
 var downscaleForbiddenWindow = 5 * time.Minute
@@ -129,6 +134,7 @@ resyncPeriod time.Duration,
 	)
 	hpaController.hpaLister = hpaInformer.Lister()
 	hpaController.hpaListerSynced = hpaInformer.Informer().HasSynced
+	hpaController.lru = lru.New(LruCacheSize)
 
 	return hpaController
 }
@@ -440,15 +446,15 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 
 	if rescale {
 		scale.Spec.Replicas = desiredReplicas
-		_, err = a.scaleNamespacer.Scales(hpa.Namespace).Update(hpa.Spec.ScaleTargetRef.Kind, scale)
-		if err != nil {
-			a.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedRescale", "New size: %d; reason: %s; error: %v", desiredReplicas, rescaleReason, err.Error())
-			return fmt.Errorf("failed to rescale %s: %v", reference, err)
-		}
 		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" && hpa.Spec.ScaleTargetRef.APIVersion == "v1" {
 			rcName := hpa.Spec.ScaleTargetRef.Name
 			rcNamespace := hpa.Namespace
 			podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas , "ScaleBegin")
+		}
+		_, err = a.scaleNamespacer.Scales(hpa.Namespace).Update(hpa.Spec.ScaleTargetRef.Kind, scale)
+		if err != nil {
+			a.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedRescale", "New size: %d; reason: %s; error: %v", desiredReplicas, rescaleReason, err.Error())
+			return fmt.Errorf("failed to rescale %s: %v", reference, err)
 		}
 		a.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "SuccessfulRescale", "New size: %d; reason: %s", desiredReplicas, rescaleReason)
 		glog.Infof("Successfull rescale of %s, old size: %d, new size: %d, reason: %s",
@@ -458,7 +464,12 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 			if currentReplicas == desiredReplicas {
 				rcName := hpa.Spec.ScaleTargetRef.Name
 				rcNamespace := hpa.Namespace
-				podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas, "ScaleEnd")
+				lruKey := rcName + "/" + rcNamespace + "/" + string(currentReplicas) + "/" + string(desiredReplicas)
+				_, ok := a.lru.Get(lruKey)
+				if !ok {
+					a.lru.Add(lruKey, struct {}{})
+					podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas, "ScaleEnd")
+				}
 			}
 		}
 
