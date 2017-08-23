@@ -446,10 +446,16 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 
 	if rescale {
 		scale.Spec.Replicas = desiredReplicas
-		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" && hpa.Spec.ScaleTargetRef.APIVersion == "v1" {
+		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
 			rcName := hpa.Spec.ScaleTargetRef.Name
 			rcNamespace := hpa.Namespace
-			podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas , "ScaleBegin")
+			lruKey := rcName + "/" + rcNamespace + "/" + string(currentReplicas) + "/" + string(desiredReplicas) + "/begin"
+			fmt.Println(lruKey)
+			res, _ := a.lru.Get(lruKey)
+			if res == nil  {
+				a.lru.Add(lruKey, struct{}{})
+				podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas, "ScaleBegin")
+			}
 		}
 		_, err = a.scaleNamespacer.Scales(hpa.Namespace).Update(hpa.Spec.ScaleTargetRef.Kind, scale)
 		if err != nil {
@@ -460,13 +466,14 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 		glog.Infof("Successfull rescale of %s, old size: %d, new size: %d, reason: %s",
 			hpa.Name, currentReplicas, desiredReplicas, rescaleReason)
 	} else {
-		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" && hpa.Spec.ScaleTargetRef.APIVersion == "v1" {
+		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
 			if currentReplicas == desiredReplicas {
 				rcName := hpa.Spec.ScaleTargetRef.Name
 				rcNamespace := hpa.Namespace
-				lruKey := rcName + "/" + rcNamespace + "/" + string(currentReplicas) + "/" + string(desiredReplicas)
-				_, ok := a.lru.Get(lruKey)
-				if !ok {
+				lruKey := rcName + "/" + rcNamespace + "/" + string(currentReplicas) + "/" + string(desiredReplicas) +  "/end"
+				fmt.Println(lruKey)
+				res, _ := a.lru.Get(lruKey)
+				if res == nil {
 					a.lru.Add(lruKey, struct {}{})
 					podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas, "ScaleEnd")
 				}
