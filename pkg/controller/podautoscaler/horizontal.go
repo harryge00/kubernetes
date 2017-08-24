@@ -451,7 +451,7 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 			rcNamespace := hpa.Namespace
 			var lastScaleTime string
 			if hpa.Status.LastScaleTime == nil {
-				lastScaleTime = "0"
+				lastScaleTime = hpa.CreationTimestamp.Time.String()
 			} else {
 				lastScaleTime = hpa.Status.LastScaleTime.String()
 			}
@@ -478,7 +478,7 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 				rcNamespace := hpa.Namespace
 				var lastScaleTime string
 				if hpa.Status.LastScaleTime == nil {
-					lastScaleTime = "0"
+					lastScaleTime = hpa.CreationTimestamp.Time.String()
 				} else {
 					lastScaleTime = hpa.Status.LastScaleTime.String()
 				}

@@ -1284,6 +1284,7 @@ func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T) (*fake.
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      hpaName,
 						Namespace: namespace,
+						CreationTimestamp: metav1.Time{time.Now()},
 						SelfLink:  "experimental/v1/namespaces/" + namespace + "/horizontalpodautoscalers/" + hpaName,
 					},
 					Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
@@ -1304,6 +1305,7 @@ func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T) (*fake.
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      hpaName,
 						Namespace: namespace,
+						CreationTimestamp: metav1.Time{time.Now()},
 						SelfLink:  "experimental/v1/namespaces/" + namespace + "/horizontalpodautoscalers/" + hpaName,
 					},
 					Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
@@ -1635,8 +1637,8 @@ func TestAutoScaleEvent(t *testing.T) {
 	tc := testCase{
 		minReplicas:         2,
 		maxReplicas:         5,
-		initialReplicas:     5,
-		desiredReplicas:     6,
+		initialReplicas:     6,
+		desiredReplicas:     5,
 		CPUTarget:           50,
 		reportedLevels:      []uint64{8000, 9500, 1000},
 		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},
