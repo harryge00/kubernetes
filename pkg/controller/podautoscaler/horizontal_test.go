@@ -1636,7 +1636,7 @@ func TestAutoScaleEvent(t *testing.T) {
 		minReplicas:         2,
 		maxReplicas:         5,
 		initialReplicas:     5,
-		desiredReplicas:     5,
+		desiredReplicas:     6,
 		CPUTarget:           50,
 		reportedLevels:      []uint64{8000, 9500, 1000},
 		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},

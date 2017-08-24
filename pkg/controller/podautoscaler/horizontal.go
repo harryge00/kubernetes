@@ -449,7 +449,13 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
 			rcName := hpa.Spec.ScaleTargetRef.Name
 			rcNamespace := hpa.Namespace
-			lruKey := rcName + "/" + rcNamespace + "/" + string(currentReplicas) + "/" + string(desiredReplicas) + "/begin"
+			var lastScaleTime string
+			if hpa.Status.LastScaleTime == nil {
+				lastScaleTime = time.Now().String()
+			} else {
+				lastScaleTime = hpa.Status.LastScaleTime.String()
+			}
+			lruKey := hpa.Name + "/begin/" + lastScaleTime
 			fmt.Println(lruKey)
 			res, _ := a.lru.Get(lruKey)
 			if res == nil  {
@@ -470,7 +476,13 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 			if currentReplicas == desiredReplicas {
 				rcName := hpa.Spec.ScaleTargetRef.Name
 				rcNamespace := hpa.Namespace
-				lruKey := rcName + "/" + rcNamespace + "/" + string(currentReplicas) + "/" + string(desiredReplicas) +  "/end"
+				var lastScaleTime string
+				if hpa.Status.LastScaleTime == nil {
+					lastScaleTime = time.Now().String()
+				} else {
+					lastScaleTime = hpa.Status.LastScaleTime.String()
+				}
+				lruKey := hpa.Name + "/end/" + lastScaleTime
 				fmt.Println(lruKey)
 				res, _ := a.lru.Get(lruKey)
 				if res == nil {
