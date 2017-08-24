@@ -473,15 +473,12 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 			hpa.Name, currentReplicas, desiredReplicas, rescaleReason)
 	} else {
 		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
-			if currentReplicas == desiredReplicas {
+			if currentReplicas == desiredReplicas && hpa.Status.LastScaleTime != nil {
 				rcName := hpa.Spec.ScaleTargetRef.Name
 				rcNamespace := hpa.Namespace
 				var lastScaleTime string
-				if hpa.Status.LastScaleTime == nil {
-					lastScaleTime = hpa.CreationTimestamp.Time.String()
-				} else {
-					lastScaleTime = hpa.Status.LastScaleTime.String()
-				}
+				lastScaleTime = hpa.Status.LastScaleTime.String()
+
 				lruKey := hpa.Name + "/end/" + lastScaleTime
 				fmt.Println(lruKey)
 				res, _ := a.lru.Get(lruKey)

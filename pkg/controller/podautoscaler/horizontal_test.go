@@ -47,6 +47,7 @@ import (
 	metricsapi "k8s.io/metrics/pkg/apis/metrics/v1alpha1"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/golang/groupcache/lru"
 
 	_ "k8s.io/kubernetes/pkg/apis/autoscaling/install"
 	_ "k8s.io/kubernetes/pkg/apis/extensions/install"
@@ -1180,8 +1181,8 @@ func (record FakeEventRecorder) PastEventf(object runtime.Object, timestamp meta
 	fmt.Println(args...)
 }
 
-func (tc *testCase) runTestWithFakeEventRecorder(t *testing.T) {
-	testClient, testMetricsClient, testCMClient := tc.prepareTestClientWithFakeEventRecorder(t)
+func (tc *testCase) runTestWithFakeEventRecorder(t *testing.T, hpaTime bool, lru *lru.Cache) {
+	testClient, testMetricsClient, testCMClient := tc.prepareTestClientWithFakeEventRecorder(t, hpaTime, tc.lastScaleTime)
 	metricsClient := metrics.NewRESTMetricsClient(
 		testMetricsClient.MetricsV1alpha1(),
 		testCMClient,
@@ -1225,6 +1226,7 @@ func (tc *testCase) runTestWithFakeEventRecorder(t *testing.T) {
 		informerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
 		controller.NoResyncPeriodFunc(),
 	)
+	hpaController.lru = lru
 	hpaController.eventRecorder = FakeEventRecorder{}
 	hpaController.hpaListerSynced = alwaysReady
 
@@ -1245,7 +1247,7 @@ func (tc *testCase) runTestWithFakeEventRecorder(t *testing.T) {
 	<-tc.processed
 	tc.verifyResults(t)
 }
-func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T) (*fake.Clientset, *metricsfake.Clientset, *cmfake.FakeCustomMetricsClient) {
+func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T, hpaTime bool, time *metav1.Time) (*fake.Clientset, *metricsfake.Clientset, *cmfake.FakeCustomMetricsClient) {
 	namespace := "test-namespace"
 	hpaName := "test-hpa"
 	podNamePrefix := "test-pod"
@@ -1277,52 +1279,103 @@ func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T) (*fake.
 	fakeClient.AddReactor("list", "horizontalpodautoscalers", func(action core.Action) (handled bool, ret runtime.Object, err error) {
 		tc.Lock()
 		defer tc.Unlock()
-
-		obj := &autoscalingv2.HorizontalPodAutoscalerList{
-			Items: []autoscalingv2.HorizontalPodAutoscaler{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      hpaName,
-						Namespace: namespace,
-						CreationTimestamp: metav1.Time{time.Now()},
-						SelfLink:  "experimental/v1/namespaces/" + namespace + "/horizontalpodautoscalers/" + hpaName,
-					},
-					Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
-						ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
-							Kind:       tc.resource.kind,
-							Name:       tc.resource.name,
-							APIVersion: tc.resource.apiVersion,
+		var obj *autoscalingv2.HorizontalPodAutoscalerList
+		if hpaTime {
+			obj = &autoscalingv2.HorizontalPodAutoscalerList{
+				Items: []autoscalingv2.HorizontalPodAutoscaler{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      hpaName,
+							Namespace: namespace,
+							CreationTimestamp: *time,
+							SelfLink:  "experimental/v1/namespaces/" + namespace + "/horizontalpodautoscalers/" + hpaName,
 						},
-						MinReplicas: &tc.minReplicas,
-						MaxReplicas: tc.maxReplicas,
+						Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+							ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+								Kind:       tc.resource.kind,
+								Name:       tc.resource.name,
+								APIVersion: tc.resource.apiVersion,
+							},
+							MinReplicas: &tc.minReplicas,
+							MaxReplicas: tc.maxReplicas,
+						},
+						Status: autoscalingv2.HorizontalPodAutoscalerStatus{
+							CurrentReplicas: tc.initialReplicas,
+							DesiredReplicas: tc.initialReplicas,
+							LastScaleTime:   time,
+						},
 					},
-					Status: autoscalingv2.HorizontalPodAutoscalerStatus{
-						CurrentReplicas: tc.initialReplicas,
-						DesiredReplicas: tc.initialReplicas,
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      hpaName,
+							Namespace: namespace,
+							CreationTimestamp: *time,
+							SelfLink:  "experimental/v1/namespaces/" + namespace + "/horizontalpodautoscalers/" + hpaName,
+						},
+						Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+							ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+								Kind:       tc.resource.kind,
+								Name:       tc.resource.name,
+								APIVersion: tc.resource.apiVersion,
+							},
+							MinReplicas: &tc.minReplicas,
+							MaxReplicas: tc.maxReplicas,
+						},
+						Status: autoscalingv2.HorizontalPodAutoscalerStatus{
+							CurrentReplicas: 5,
+							DesiredReplicas: 5,
+							LastScaleTime:   time,
+						},
 					},
 				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      hpaName,
-						Namespace: namespace,
-						CreationTimestamp: metav1.Time{time.Now()},
-						SelfLink:  "experimental/v1/namespaces/" + namespace + "/horizontalpodautoscalers/" + hpaName,
-					},
-					Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
-						ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
-							Kind:       tc.resource.kind,
-							Name:       tc.resource.name,
-							APIVersion: tc.resource.apiVersion,
+			}
+		} else {
+			obj = &autoscalingv2.HorizontalPodAutoscalerList{
+				Items: []autoscalingv2.HorizontalPodAutoscaler{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      hpaName,
+							Namespace: namespace,
+							CreationTimestamp: *time,
+							SelfLink:  "experimental/v1/namespaces/" + namespace + "/horizontalpodautoscalers/" + hpaName,
 						},
-						MinReplicas: &tc.minReplicas,
-						MaxReplicas: tc.maxReplicas,
+						Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+							ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+								Kind:       tc.resource.kind,
+								Name:       tc.resource.name,
+								APIVersion: tc.resource.apiVersion,
+							},
+							MinReplicas: &tc.minReplicas,
+							MaxReplicas: tc.maxReplicas,
+						},
+						Status: autoscalingv2.HorizontalPodAutoscalerStatus{
+							CurrentReplicas: tc.initialReplicas,
+							DesiredReplicas: tc.initialReplicas,
+						},
 					},
-					Status: autoscalingv2.HorizontalPodAutoscalerStatus{
-						CurrentReplicas: 5,
-						DesiredReplicas: 5,
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      hpaName,
+							Namespace: namespace,
+							CreationTimestamp: *time,
+							SelfLink:  "experimental/v1/namespaces/" + namespace + "/horizontalpodautoscalers/" + hpaName,
+						},
+						Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+							ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+								Kind:       tc.resource.kind,
+								Name:       tc.resource.name,
+								APIVersion: tc.resource.apiVersion,
+							},
+							MinReplicas: &tc.minReplicas,
+							MaxReplicas: tc.maxReplicas,
+						},
+						Status: autoscalingv2.HorizontalPodAutoscalerStatus{
+							CurrentReplicas: 5,
+							DesiredReplicas: 5,
+						},
 					},
 				},
-			},
+			}
 		}
 
 		if tc.CPUTarget > 0.0 {
@@ -1536,7 +1589,7 @@ func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T) (*fake.
 					Namespace: namespace,
 					Labels:    selector,
 				},
-				Timestamp: metav1.Time{Time: time.Now()},
+				Timestamp: *time,
 				Containers: []metricsapi.ContainerMetrics{
 					{
 						Name: "container",
@@ -1581,7 +1634,7 @@ func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T) (*fake.
 						Name:      fmt.Sprintf("%s-%d", podNamePrefix, i),
 						Namespace: namespace,
 					},
-					Timestamp:  metav1.Time{Time: time.Now()},
+					Timestamp:  *time,
 					MetricName: "qps",
 					Value:      *resource.NewMilliQuantity(int64(level), resource.DecimalSI),
 				}
@@ -1619,7 +1672,7 @@ func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T) (*fake.
 						APIVersion: matchedTarget.Object.Target.APIVersion,
 						Name:       name,
 					},
-					Timestamp:  metav1.Time{Time: time.Now()},
+					Timestamp:  *time,
 					MetricName: "qps",
 					Value:      *resource.NewMilliQuantity(int64(tc.reportedLevels[0]), resource.DecimalSI),
 				},
@@ -1633,7 +1686,10 @@ func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T) (*fake.
 }
 
 func TestAutoScaleEvent(t *testing.T) {
-	time := metav1.Time{Time: time.Now()}
+	fmt.Println("----------------------test1--------------------------")
+	time1 := metav1.Time{Time: time.Now()}
+	lru := lru.New(LruCacheSize)
+
 	tc := testCase{
 		minReplicas:         2,
 		maxReplicas:         5,
@@ -1643,8 +1699,108 @@ func TestAutoScaleEvent(t *testing.T) {
 		reportedLevels:      []uint64{8000, 9500, 1000},
 		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},
 		useMetricsApi:       true,
-		lastScaleTime:       &time,
+		lastScaleTime:       &time1,
 	}
-	tc.runTestWithFakeEventRecorder(t)
+	tc.runTestWithFakeEventRecorder(t, false, lru)
+
+	fmt.Println("----------------------test2--------------------------")
+	tc = testCase{
+		minReplicas:         2,
+		maxReplicas:         5,
+		initialReplicas:     5,
+		desiredReplicas:     5,
+		CPUTarget:           50,
+		reportedLevels:      []uint64{8000, 9500, 1000},
+		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},
+		useMetricsApi:       true,
+		lastScaleTime:       &time1,
+	}
+	tc.runTestWithFakeEventRecorder(t, true, lru)
+
+	fmt.Println("----------------------test3--------------------------")
+	tc = testCase{
+		minReplicas:         2,
+		maxReplicas:         5,
+		initialReplicas:     5,
+		desiredReplicas:     5,
+		CPUTarget:           50,
+		reportedLevels:      []uint64{8000, 9500, 1000},
+		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},
+		useMetricsApi:       true,
+		lastScaleTime:       &time1,
+	}
+	tc.runTestWithFakeEventRecorder(t, false, lru)
+
+	fmt.Println("----------------------test4--------------------------")
+	tc = testCase{
+		minReplicas:         2,
+		maxReplicas:         5,
+		initialReplicas:     6,
+		desiredReplicas:     5,
+		CPUTarget:           50,
+		reportedLevels:      []uint64{8000, 9500, 1000},
+		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},
+		useMetricsApi:       true,
+		lastScaleTime:       &time1,
+	}
+	tc.runTestWithFakeEventRecorder(t, false, lru)
+
+	time1 = metav1.Time{Time: time.Now()}
+	fmt.Println("----------------------test5--------------------------")
+	tc = testCase{
+		minReplicas:         2,
+		maxReplicas:         5,
+		initialReplicas:     6,
+		desiredReplicas:     5,
+		CPUTarget:           50,
+		reportedLevels:      []uint64{8000, 9500, 1000},
+		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},
+		useMetricsApi:       true,
+		lastScaleTime:       &time1,
+	}
+	tc.runTestWithFakeEventRecorder(t, false, lru)
+
+	fmt.Println("----------------------test6--------------------------")
+	tc = testCase{
+		minReplicas:         2,
+		maxReplicas:         5,
+		initialReplicas:     5,
+		desiredReplicas:     5,
+		CPUTarget:           50,
+		reportedLevels:      []uint64{8000, 9500, 1000},
+		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},
+		useMetricsApi:       true,
+		lastScaleTime:       &time1,
+	}
+	tc.runTestWithFakeEventRecorder(t, true, lru)
+
+	fmt.Println("----------------------test7--------------------------")
+	tc = testCase{
+		minReplicas:         2,
+		maxReplicas:         5,
+		initialReplicas:     5,
+		desiredReplicas:     5,
+		CPUTarget:           50,
+		reportedLevels:      []uint64{8000, 9500, 1000},
+		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},
+		useMetricsApi:       true,
+		lastScaleTime:       &time1,
+	}
+	tc.runTestWithFakeEventRecorder(t, false, lru)
+
+	fmt.Println("----------------------test8--------------------------")
+	tc = testCase{
+		minReplicas:         2,
+		maxReplicas:         5,
+		initialReplicas:     6,
+		desiredReplicas:     5,
+		CPUTarget:           50,
+		reportedLevels:      []uint64{8000, 9500, 1000},
+		reportedCPURequests: []resource.Quantity{resource.MustParse("0.9"), resource.MustParse("1.0"), resource.MustParse("1.1")},
+		useMetricsApi:       true,
+		lastScaleTime:       &time1,
+	}
+	tc.runTestWithFakeEventRecorder(t, false, lru)
+
 }
 // TODO: add more tests
