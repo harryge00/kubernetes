@@ -527,6 +527,7 @@ func (tc *testCase) runTest(t *testing.T) {
 		replicaCalc,
 		informerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
 		controller.NoResyncPeriodFunc(),
+		nil,
 	)
 	hpaController.hpaListerSynced = alwaysReady
 
@@ -1225,6 +1226,7 @@ func (tc *testCase) runTestWithFakeEventRecorder(t *testing.T, hpaTime bool, lru
 		replicaCalc,
 		informerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
 		controller.NoResyncPeriodFunc(),
+		nil,
 	)
 	hpaController.lru = lru
 	hpaController.eventRecorder = FakeEventRecorder{}

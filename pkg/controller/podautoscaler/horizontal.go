@@ -45,6 +45,7 @@ import (
 	extensionsclient "k8s.io/kubernetes/pkg/client/clientset_generated/clientset/typed/extensions/v1beta1"
 	autoscalinginformers "k8s.io/kubernetes/pkg/client/informers/informers_generated/externalversions/autoscaling/v1"
 	autoscalinglisters "k8s.io/kubernetes/pkg/client/listers/autoscaling/v1"
+	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/pkg/controller"
 
 	"github.com/golang/groupcache/lru"
@@ -98,6 +99,7 @@ type HorizontalController struct {
 	// Controllers that need to be synced
 	queue workqueue.RateLimitingInterface
 	lru		*lru.Cache
+	rcClient 	clientset.Interface
 }
 
 var downscaleForbiddenWindow = 5 * time.Minute
@@ -110,6 +112,7 @@ hpaNamespacer autoscalingclient.HorizontalPodAutoscalersGetter,
 replicaCalc *ReplicaCalculator,
 hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer,
 resyncPeriod time.Duration,
+rcClient clientset.Interface,
 ) *HorizontalController {
 	broadcaster := record.NewBroadcaster()
 	// TODO: remove the wrapper when every clients have moved to use the clientset.
@@ -121,6 +124,7 @@ resyncPeriod time.Duration,
 		eventRecorder:   recorder,
 		scaleNamespacer: scaleNamespacer,
 		hpaNamespacer:   hpaNamespacer,
+		rcClient:	 rcClient,
 		queue:           workqueue.NewNamedRateLimitingQueue(NewDefaultHPARateLimiter(resyncPeriod), "horizontalpodautoscaler"),
 	}
 
@@ -473,10 +477,13 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 			hpa.Name, currentReplicas, desiredReplicas, rescaleReason)
 	} else {
 		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
-			rc, err  := a.scaleNamespacer.Scales(hpa.Namespace).GetRc(hpa.Namespace, hpa.Spec.ScaleTargetRef.Name)
+			//rc, err  := a.scaleNamespacer.Scales(hpa.Namespace).GetRc(hpa.Namespace, hpa.Spec.ScaleTargetRef.Name)
+			rc, err  := a.rcClient.Core().ReplicationControllers(hpa.Namespace).Get(hpa.Spec.ScaleTargetRef.Name, metav1.GetOptions{})
 			if err == nil && rc != nil {
 				currentRcAvailableNum := rc.Status.ReadyReplicas
+				glog.V(4).Infof("get rc", currentRcAvailableNum, desiredReplicas, hpa.Status.LastScaleTime)
 				if currentRcAvailableNum == desiredReplicas && hpa.Status.LastScaleTime != nil {
+					glog.V(4).Infof("before report event")
 					rcName := hpa.Spec.ScaleTargetRef.Name
 					rcNamespace := hpa.Namespace
 					var lastScaleTime string
