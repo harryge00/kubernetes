@@ -473,18 +473,22 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 			hpa.Name, currentReplicas, desiredReplicas, rescaleReason)
 	} else {
 		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
-			if currentReplicas == desiredReplicas && hpa.Status.LastScaleTime != nil {
-				rcName := hpa.Spec.ScaleTargetRef.Name
-				rcNamespace := hpa.Namespace
-				var lastScaleTime string
-				lastScaleTime = hpa.Status.LastScaleTime.String()
+			rc, err  := a.scaleNamespacer.Scales(hpa.Namespace).GetRc(hpa.Namespace, hpa.Spec.ScaleTargetRef.Name)
+			if err == nil && rc != nil {
+				currentRcAvailableNum := rc.Status.ReadyReplicas
+				if currentRcAvailableNum == desiredReplicas && hpa.Status.LastScaleTime != nil {
+					rcName := hpa.Spec.ScaleTargetRef.Name
+					rcNamespace := hpa.Namespace
+					var lastScaleTime string
+					lastScaleTime = hpa.Status.LastScaleTime.String()
 
-				lruKey := hpa.Name + "/end/" + lastScaleTime
-				fmt.Println(lruKey)
-				res, _ := a.lru.Get(lruKey)
-				if res == nil {
-					a.lru.Add(lruKey, struct {}{})
-					podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas, "ScaleEnd")
+					lruKey := hpa.Name + "/end/" + lastScaleTime
+					fmt.Println(lruKey)
+					res, _ := a.lru.Get(lruKey)
+					if res == nil {
+						a.lru.Add(lruKey, struct {}{})
+						podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentRcAvailableNum, desiredReplicas, "ScaleEnd")
+					}
 				}
 			}
 		}

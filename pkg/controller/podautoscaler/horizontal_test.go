@@ -1168,9 +1168,9 @@ func (record FakeEventRecorder) Event(object runtime.Object, eventtype, reason, 
 }
 
 func (record FakeEventRecorder) Eventf(object runtime.Object, eventtype, reason, messageFmt string, args ...interface{}){
-	fmt.Println(eventtype)
-	fmt.Println(reason)
-	fmt.Println(messageFmt)
+	//fmt.Println(eventtype)
+	//fmt.Println(reason)
+	//fmt.Println(messageFmt)
 	fmt.Println(args...)
 }
 
@@ -1567,6 +1567,28 @@ func (tc *testCase) prepareTestClientWithFakeEventRecorder(t *testing.T, hpaTime
 		tc.statusUpdated = true
 		// Every time we reconcile HPA object we are updating status.
 		tc.processed <- obj.Name
+		return true, obj, nil
+	})
+
+	fakeClient.AddReactor("getrc", "ReplicationController", func(action core.Action) (handled bool, ret runtime.Object, err error){
+		tc.Lock()
+		defer tc.Unlock()
+		var counts int32 = 6
+		obj := &v1.ReplicationController{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-rc",
+				Namespace: namespace,
+			},
+			Spec: v1.ReplicationControllerSpec{
+				Replicas: &counts,
+			},
+			Status: v1.ReplicationControllerStatus{
+				AvailableReplicas: 5,
+				Replicas: counts,
+				ReadyReplicas: 5,
+			},
+		}
+
 		return true, obj, nil
 	})
 

@@ -20,12 +20,29 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
+	v1 "k8s.io/kubernetes/pkg/api/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	scheme "k8s.io/kubernetes/pkg/client/clientset_generated/clientset/scheme"
 )
 
 // The ScaleExpansion interface allows manually adding extra methods to the ScaleInterface.
 type ScaleExpansion interface {
 	Get(kind string, name string) (*v1beta1.Scale, error)
 	Update(kind string, scale *v1beta1.Scale) (*v1beta1.Scale, error)
+	GetRc(namespace, name string)  (*v1.ReplicationController, error)
+}
+
+func (c *scales) GetRc(namespace, name string) (*v1.ReplicationController, error) {
+	result := &v1.ReplicationController{}
+	options := metav1.GetOptions{}
+	err := c.client.Get().
+		Namespace(namespace).
+		Resource("replicationcontrollers").
+		Name(name).
+		VersionedParams(&options, scheme.ParameterCodec).
+		Do().
+		Into(result)
+	return result, err
 }
 
 // Get takes the reference to scale subresource and returns the subresource or error, if one occurs.
