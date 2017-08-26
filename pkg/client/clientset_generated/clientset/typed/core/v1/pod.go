@@ -254,7 +254,7 @@ func (c *pods) RecordRCEvent(rcName, namespace, podName, event, action string) {
 func (c *pods) sendEvent(ref *api.ObjectReference, reason, message string) {
 	event := makeEvent(ref, api.EventTypeNormal, reason, message)
 	event.Source = api.EventSource{Component: "client",}
-	result := &api.Event{}
+	result := &v1.Event{}
 	err := c.client.Post().
 		Namespace(c.ns).
 		Resource("events").
