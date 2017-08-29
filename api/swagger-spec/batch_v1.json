@@ -1222,6 +1222,15 @@
      "template": {
       "$ref": "v1.PodTemplateSpec",
       "description": "Template is the object that describes the pod that will be created when executing a job. More info: http://kubernetes.io/docs/user-guide/jobs"
+     },
+     "activeDeadlineCount": {
+      "type": "integer",
+      "format": "int32",
+      "description": "\u003cAuthor xufei\u003e: Optinal count relative to failed counts to terminate job"
+     },
+     "failedDeleteAll": {
+      "type": "boolean",
+      "description": "\u003cAuthor xufei\u003e: if job failed, should we delete all success and failed pod ?"
      }
     }
    },

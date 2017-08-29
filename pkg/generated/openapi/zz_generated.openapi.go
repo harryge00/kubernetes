@@ -12082,6 +12082,20 @@ func GetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.Ope
 								Ref:         ref("k8s.io/kubernetes/pkg/api/v1.PodTemplateSpec"),
 							},
 						},
+						"activeDeadlineCount": {
+							SchemaProps: spec.SchemaProps{
+								Description: "<Author xufei>: Optinal count relative to failed counts to terminate job",
+								Type:        []string{"integer"},
+								Format:      "int32",
+							},
+						},
+						"failedDeleteAll": {
+							SchemaProps: spec.SchemaProps{
+								Description: "<Author xufei>: if job failed, should we delete all success and failed pod ?",
+								Type:        []string{"boolean"},
+								Format:      "",
+							},
+						},
 					},
 					Required: []string{"template"},
 				},

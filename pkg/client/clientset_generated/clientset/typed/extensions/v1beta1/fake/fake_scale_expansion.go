@@ -19,6 +19,7 @@ package fake
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	core "k8s.io/client-go/testing"
+	v1 "k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 )
 
@@ -43,5 +44,17 @@ func (c *FakeScales) Update(kind string, scale *v1beta1.Scale) (result *v1beta1.
 	action.Object = scale
 	obj, err := c.Fake.Invokes(action, scale)
 	result = obj.(*v1beta1.Scale)
+	return
+}
+
+
+func (c *FakeScales)  GetRc(namespace, name string) (result *v1.ReplicationController, err error){
+	action := core.GetActionImpl{}
+	action.Verb = "getrc"
+	action.Namespace = namespace
+	action.Resource = schema.GroupVersionResource{Resource: "ReplicationController"}
+	action.Name = name
+	obj, err := c.Fake.Invokes(action, &v1.ReplicationController{})
+	result = obj.(*v1.ReplicationController)
 	return
 }

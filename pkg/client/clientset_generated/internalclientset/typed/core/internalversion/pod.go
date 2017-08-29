@@ -17,8 +17,8 @@ limitations under the License.
 package internalversion
 
 import (
-       "encoding/json"
-       "time"
+	"encoding/json"
+	"time"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -26,9 +26,9 @@ import (
 	api "k8s.io/kubernetes/pkg/api"
 	scheme "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/scheme"
 
-       	"github.com/golang/glog"
-       	util "k8s.io/kubernetes/pkg/util/podchanges"
-       	"fmt"
+	"github.com/golang/glog"
+	util "k8s.io/kubernetes/pkg/util/podchanges"
+	"fmt"
 )
 
 // PodsGetter has a method to return a PodInterface.

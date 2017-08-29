@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/util/podchanges"
 	autoscalingv1 "k8s.io/kubernetes/pkg/apis/autoscaling/v1"
 	autoscalingv2 "k8s.io/kubernetes/pkg/apis/autoscaling/v2alpha1"
 	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
@@ -44,7 +45,10 @@ import (
 	extensionsclient "k8s.io/kubernetes/pkg/client/clientset_generated/clientset/typed/extensions/v1beta1"
 	autoscalinginformers "k8s.io/kubernetes/pkg/client/informers/informers_generated/externalversions/autoscaling/v1"
 	autoscalinglisters "k8s.io/kubernetes/pkg/client/listers/autoscaling/v1"
+	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/pkg/controller"
+
+	"github.com/golang/groupcache/lru"
 )
 
 const (
@@ -54,6 +58,8 @@ const (
 
 	scaleUpLimitFactor  = 2
 	scaleUpLimitMinimum = 4
+
+	LruCacheSize =  10000
 )
 
 func calculateScaleUpLimit(currentReplicas int32) int32 {
@@ -92,18 +98,21 @@ type HorizontalController struct {
 
 	// Controllers that need to be synced
 	queue workqueue.RateLimitingInterface
+	lru		*lru.Cache
+	rcClient 	clientset.Interface
 }
 
 var downscaleForbiddenWindow = 5 * time.Minute
 var upscaleForbiddenWindow = 3 * time.Minute
 
 func NewHorizontalController(
-	evtNamespacer v1core.EventsGetter,
-	scaleNamespacer extensionsclient.ScalesGetter,
-	hpaNamespacer autoscalingclient.HorizontalPodAutoscalersGetter,
-	replicaCalc *ReplicaCalculator,
-	hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer,
-	resyncPeriod time.Duration,
+evtNamespacer v1core.EventsGetter,
+scaleNamespacer extensionsclient.ScalesGetter,
+hpaNamespacer autoscalingclient.HorizontalPodAutoscalersGetter,
+replicaCalc *ReplicaCalculator,
+hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer,
+resyncPeriod time.Duration,
+rcClient clientset.Interface,
 ) *HorizontalController {
 	broadcaster := record.NewBroadcaster()
 	// TODO: remove the wrapper when every clients have moved to use the clientset.
@@ -115,6 +124,7 @@ func NewHorizontalController(
 		eventRecorder:   recorder,
 		scaleNamespacer: scaleNamespacer,
 		hpaNamespacer:   hpaNamespacer,
+		rcClient:	 rcClient,
 		queue:           workqueue.NewNamedRateLimitingQueue(NewDefaultHPARateLimiter(resyncPeriod), "horizontalpodautoscaler"),
 	}
 
@@ -128,6 +138,7 @@ func NewHorizontalController(
 	)
 	hpaController.hpaLister = hpaInformer.Lister()
 	hpaController.hpaListerSynced = hpaInformer.Informer().HasSynced
+	hpaController.lru = lru.New(LruCacheSize)
 
 	return hpaController
 }
@@ -206,7 +217,7 @@ func (a *HorizontalController) processNextWorkItem() bool {
 // of the computed replica counts, a description of the associated metric, and the statuses of all metrics
 // computed.
 func (a *HorizontalController) computeReplicasForMetrics(hpa *autoscalingv2.HorizontalPodAutoscaler, scale *extensions.Scale,
-	metricSpecs []autoscalingv2.MetricSpec) (replicas int32, metric string, statuses []autoscalingv2.MetricStatus, timestamp time.Time, err error) {
+metricSpecs []autoscalingv2.MetricSpec) (replicas int32, metric string, statuses []autoscalingv2.MetricStatus, timestamp time.Time, err error) {
 
 	currentReplicas := scale.Status.Replicas
 
@@ -439,6 +450,23 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 
 	if rescale {
 		scale.Spec.Replicas = desiredReplicas
+		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
+			rcName := hpa.Spec.ScaleTargetRef.Name
+			rcNamespace := hpa.Namespace
+			var lastScaleTime string
+			if hpa.Status.LastScaleTime == nil {
+				lastScaleTime = hpa.CreationTimestamp.Time.String()
+			} else {
+				lastScaleTime = hpa.Status.LastScaleTime.String()
+			}
+			lruKey := hpa.Name + "/begin/" + lastScaleTime
+			fmt.Println(lruKey)
+			res, _ := a.lru.Get(lruKey)
+			if res == nil  {
+				a.lru.Add(lruKey, struct{}{})
+				podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas, "ScaleBegin")
+			}
+		}
 		_, err = a.scaleNamespacer.Scales(hpa.Namespace).Update(hpa.Spec.ScaleTargetRef.Kind, scale)
 		if err != nil {
 			a.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedRescale", "New size: %d; reason: %s; error: %v", desiredReplicas, rescaleReason, err.Error())
@@ -448,6 +476,30 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 		glog.Infof("Successfull rescale of %s, old size: %d, new size: %d, reason: %s",
 			hpa.Name, currentReplicas, desiredReplicas, rescaleReason)
 	} else {
+		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
+			//rc, err  := a.scaleNamespacer.Scales(hpa.Namespace).GetRc(hpa.Namespace, hpa.Spec.ScaleTargetRef.Name)
+			rc, err  := a.rcClient.Core().ReplicationControllers(hpa.Namespace).Get(hpa.Spec.ScaleTargetRef.Name, metav1.GetOptions{})
+			if err == nil && rc != nil {
+				currentRcAvailableNum := rc.Status.ReadyReplicas
+				glog.V(4).Infof("get rc", currentRcAvailableNum, desiredReplicas, hpa.Status.LastScaleTime)
+				if currentRcAvailableNum == desiredReplicas && hpa.Status.LastScaleTime != nil {
+					glog.V(4).Infof("before report event")
+					rcName := hpa.Spec.ScaleTargetRef.Name
+					rcNamespace := hpa.Namespace
+					var lastScaleTime string
+					lastScaleTime = hpa.Status.LastScaleTime.String()
+
+					lruKey := hpa.Name + "/end/" + lastScaleTime
+					fmt.Println(lruKey)
+					res, _ := a.lru.Get(lruKey)
+					if res == nil {
+						a.lru.Add(lruKey, struct {}{})
+						podchanges.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentRcAvailableNum, desiredReplicas, "ScaleEnd")
+					}
+				}
+			}
+		}
+
 		glog.V(4).Infof("decided not to scale %s to %v (last scale time was %s)", reference, desiredReplicas, hpa.Status.LastScaleTime)
 		desiredReplicas = currentReplicas
 	}

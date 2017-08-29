@@ -129,6 +129,16 @@ func DeepCopy_v1_JobSpec(in interface{}, out interface{}, c *conversion.Cloner) 
 		if err := api_v1.DeepCopy_v1_PodTemplateSpec(&in.Template, &out.Template, c); err != nil {
 			return err
 		}
+		if in.ActiveDeadlineCount != nil {
+			in, out := &in.ActiveDeadlineCount, &out.ActiveDeadlineCount
+			*out = new(int32)
+			**out = **in
+		}
+		if in.FailedDeleteAll != nil {
+			in, out := &in.FailedDeleteAll, &out.FailedDeleteAll
+			*out = new(bool)
+			**out = **in
+		}
 		return nil
 	}
 }

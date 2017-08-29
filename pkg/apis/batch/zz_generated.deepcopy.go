@@ -203,9 +203,19 @@ func DeepCopy_batch_JobSpec(in interface{}, out interface{}, c *conversion.Clone
 			*out = new(int32)
 			**out = **in
 		}
+		if in.ActiveDeadlineCount != nil {
+			in, out := &in.ActiveDeadlineCount, &out.ActiveDeadlineCount
+			*out = new(int32)
+			**out = **in
+		}
 		if in.ActiveDeadlineSeconds != nil {
 			in, out := &in.ActiveDeadlineSeconds, &out.ActiveDeadlineSeconds
 			*out = new(int64)
+			**out = **in
+		}
+		if in.FailedDeleteAll != nil {
+			in, out := &in.FailedDeleteAll, &out.FailedDeleteAll
+			*out = new(bool)
 			**out = **in
 		}
 		if in.Selector != nil {
