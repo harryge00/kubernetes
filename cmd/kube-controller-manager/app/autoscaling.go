@@ -76,6 +76,7 @@ func startHPAControllerWithMetricsClient(ctx ControllerContext, metricsClient me
 		replicaCalc,
 		ctx.InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
 		ctx.Options.HorizontalPodAutoscalerSyncPeriod.Duration,
+		ctx.ClientBuilder.ClientOrDie("replication-controller"),
 	).Run(ctx.Stop)
 	return true, nil
 }
