@@ -214,7 +214,7 @@ func (c *pods) Patch(name string, pt types.PatchType, data []byte, subresources 
 
 
 func (c *pods) RecordJobEvent(jobName, namespace, podName, event, action string) {
-	ref := &api.ObjectReference{
+	ref := &v1.ObjectReference{
 		Kind:      "job-controller",
 		Name:      podName,
 		Namespace: namespace,
@@ -233,7 +233,7 @@ func (c *pods) RecordJobEvent(jobName, namespace, podName, event, action string)
 }
 
 func (c *pods) RecordRCEvent(rcName, namespace, podName, event, action string) {
-	ref := &api.ObjectReference{
+	ref := &v1.ObjectReference{
 		Kind:      "replication-controller",
 		Name:      podName,
 		Namespace: namespace,
@@ -251,9 +251,9 @@ func (c *pods) RecordRCEvent(rcName, namespace, podName, event, action string) {
 	c.sendEvent(ref, "RcUpdate", fmt.Sprintf("%s", string(message)))
 }
 
-func (c *pods) sendEvent(ref *api.ObjectReference, reason, message string) {
+func (c *pods) sendEvent(ref *v1.ObjectReference, reason, message string) {
 	event := makeEvent(ref, api.EventTypeNormal, reason, message)
-	event.Source = api.EventSource{Component: "client",}
+	event.Source = v1.EventSource{Component: "client",}
 	result := &v1.Event{}
 	err := c.client.Post().
 		Namespace(c.ns).
@@ -266,13 +266,13 @@ func (c *pods) sendEvent(ref *api.ObjectReference, reason, message string) {
 	}
 }
 
-func makeEvent(ref *api.ObjectReference, eventtype, reason, message string) *api.Event {
+func makeEvent(ref *v1.ObjectReference, eventtype, reason, message string) *v1.Event {
 	t := time_v1.Time{Time: time.Now() }
 	namespace := ref.Namespace
 	if namespace == "" {
 		namespace = api.NamespaceDefault
 	}
-	return &api.Event{
+	return &v1.Event{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      fmt.Sprintf("%v.%x", ref.Name, t.UnixNano()),
 			Namespace: namespace,
