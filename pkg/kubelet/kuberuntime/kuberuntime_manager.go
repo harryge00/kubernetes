@@ -784,6 +784,11 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		Type: "docker",
 		ID: podSandboxID,
 	}
+
+	//if _, hasNetwork := pod.ObjectMeta.Labels["network"]; !hasNetwork {
+	//	return
+	//}
+
 	oldpod := pod.ObjectMeta.Labels["ips"]
 	label, err := m.addNetCard(pod, containerId)
 	pod.ObjectMeta.Labels["ips"] = label
@@ -1010,6 +1015,11 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 	label := pod.ObjectMeta.Labels["network"]
 	label2 := pod.ObjectMeta.Labels["ips"]
 	devips := strings.Split(label2, "-")
+
+	if len(devips) == 0 {
+		return "dev-none", nil
+	}
+
 	dev := devips[0]
 	if label == "" {
 		if label2 == "" || devips[1] == "none" {
