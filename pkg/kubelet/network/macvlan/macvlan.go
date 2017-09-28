@@ -69,6 +69,8 @@ type macvlanNetworkPlugin struct {
 	ipamclient  NWClient
 	ipv4        string
 	mask        int
+	dclient     *dockerclient.Client
+	err         error
 }
 
 func ProbeNetworkPlugins() []network.NetworkPlugin {
@@ -91,6 +93,12 @@ func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componen
 		baseURL: addr,
 		client:  &http.Client{},
 	}
+
+	plugin.dclient, plugin.err = dockerclient.NewClient("unix:///var/run/docker.sock")
+	if plugin.err != nil{
+		log.Errorf("Macvlan failed to connect to docker at local host %v", plugin.err)
+	}
+
 	return nil
 }
 
@@ -107,6 +115,7 @@ func (plugin *macvlanNetworkPlugin) Labels(label string) error{
 }
 
 func (plugin *macvlanNetworkPlugin) GetterIP() (string, error){
+
 	//from plugin.typer, plugin.server to get IP and mask
 	data := Data{}
 	nettyper := NetType(plugin.typer)
@@ -141,6 +150,7 @@ func (plugin *macvlanNetworkPlugin) GetterIP() (string, error){
 	}
 	plugin.ipv4 = data.IP
 	plugin.mask = int(data.Mask)
+
 	return plugin.ipv4, nil
 }
 
@@ -183,16 +193,10 @@ func (plugin *macvlanNetworkPlugin) Name() string {
 }
 
 func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID, annotations map[string]string) error {
-	//plugin.Mutex.Lock()
-	//defer plugin.Mutex.Unlock()
 
-	docker, err := dockerclient.NewClient("unix:///var/run/docker.sock")
+	containerinfo, err := plugin.dclient.InspectContainer(id.ID)
 	if err != nil{
-		log.Errorf("Macvlan Failed to connect to docker at local host %v", err)
-	}
-	containerinfo, err := docker.InspectContainer(id.ID)
-	if err != nil{
-		log.Errorf("Macvlan Failed to get container struct info %v", err)
+		log.Errorf("Macvlan failed to get container struct info %v", err)
 	}
 	//we supposed netns link have been made for `ln -s /var/run/docker/netns /var/run` before add this second netdev
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
@@ -201,10 +205,17 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 		return fmt.Errorf("Macvlan failed to open netns %q: %v", netns, err)
 	}
 
-	plugin.ipv4, err = plugin.GetterIP()
-	if err != nil {
-		fmt.Errorf("failed to get ipv4 from ipam in Getter IP %v", err)
+	if strings.Contains(annotations["ips"],"none") || strings.Contains(annotations["ips"],"empty") || annotations["ips"] == "" {
+		plugin.ipv4, err = plugin.GetterIP()
+		if err != nil {
+			fmt.Errorf("failed to get ipv4 from ipam in Getter IP %v", err)
+		}
+
+	} else {
+		plugin.ipv4 = strings.Split(annotations["ips"],"-")[1]
+		glog.Infof("static ip plugin ipv4 is %s", plugin.ipv4)
 	}
+
 	err = plugin.cmdAdd(plugin.netdev, netns, plugin.ipv4, gw)
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
@@ -214,14 +225,8 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 }
 
 func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.ContainerID) error {
-	//plugin.Mutex.Lock()
-	//defer plugin.Mutex.Unlock()
 
-	docker, err := dockerclient.NewClient("unix:///var/run/docker.sock")
-	if err != nil{
-		log.Errorf("Failed to connect to docker at local host %v", err)
-	}
-	containerinfo, err := docker.InspectContainer(id.ID)
+	containerinfo, err := plugin.dclient.InspectContainer(id.ID)
 	if err != nil{
 		log.Errorf("Failed to get container struct info %v", err)
 	}
@@ -229,7 +234,7 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
 	netns, err := ns.GetNS(fullnetns)
 	if err != nil {
-		glog.Errorf("failed to open netns %q: %v", netns, err)
+		glog.Infof("failed to open netns %q: %v", netns, err)
 		return fmt.Errorf("failed to open netns %q: %v", netns, err)
 	}
 	status, err := plugin.GetPodNetworkStatus(namespace, name, id)
@@ -254,13 +259,8 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 
 //if configured double net dev, we should to check the pod status for second net card
 func (plugin *macvlanNetworkPlugin) GetPodNetworkStatus(namespace string, name string, id kubecontainer.ContainerID) (*network.PodNetworkStatus, error) {
-	//netnsPath, err := plugin.host.GetNetNS(id.ID)
 
-	docker, err := dockerclient.NewClient("unix:///var/run/docker.sock")
-	if err != nil{
-		log.Errorf("Failed to connect to docker at local host %v", err)
-	}
-	c, err := docker.InspectContainer(id.ID)
+	c, err := plugin.dclient.InspectContainer(id.ID)
 	if err != nil{
 		log.Errorf("Failed to get container struct info %v", err)
 	}
@@ -269,6 +269,7 @@ func (plugin *macvlanNetworkPlugin) GetPodNetworkStatus(namespace string, name s
 	if err != nil {
 		return nil, fmt.Errorf("Macvlan failed to retrieve network namespace path: %v", err)
 	}
+
 	cmd := fmt.Sprintf("nsenter --net=%s -F -- ip -o -4 addr show dev %s scope global", netnsPath, plugin.netdev)
 	output, err := exec.New().Command("/bin/sh", "-c", cmd).CombinedOutput()
 	if err != nil {
@@ -373,23 +374,10 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 			LinkIndex:  iface.Attrs().Index,
 			Scope:      netlink.SCOPE_UNIVERSE,
 			Dst:        netv4,
-			//Src:	    ipv4,
 		})
 		if err != nil {
 			fmt.Printf("Peiqi Macvlan failed to add ethernet route rules: %v", err)
 		}
-
-		// ip route add default via x.x.x.x dev ethx
-		/*dst := netlink.NewIPNet(net.ParseIP("0.0.0.0"))
-		err = netlink.RouteAdd(&netlink.Route{
-			LinkIndex:   iface.Attrs().Index,
-			Scope:       netlink.SCOPE_UNIVERSE,
-			Dst:	     dst,
-			Gw:	     net.ParseIP(gw),
-		})
-		if err != nil {
-			fmt.Printf("Peiqi Macvlan failed to set default gw for macvlan iface")
-		}*/
 
 		contMacvlan, err := netlink.LinkByName(ifName)
 		if err != nil {
@@ -401,10 +389,8 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 		return nil
 	})
 	if err != nil {
-		//plugin.netdev = ""
 		return nil, err
 	}
-	//ugin.netdev = ""
 	return macvlan, nil
 }
 

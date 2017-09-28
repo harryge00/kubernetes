@@ -523,6 +523,7 @@ func (m *kubeGenericRuntimeManager) restoreSpecsFromContainerLabels(containerID 
 // * Stop the container.
 func (m *kubeGenericRuntimeManager) killContainer(pod *v1.Pod, containerID kubecontainer.ContainerID, containerName string, reason string, gracePeriodOverride *int64) error {
 	var containerSpec *v1.Container
+
 	if pod != nil {
 		containerSpec = kubecontainer.GetContainerSpec(pod, containerName)
 	} else {
@@ -544,6 +545,11 @@ func (m *kubeGenericRuntimeManager) killContainer(pod *v1.Pod, containerID kubec
 
 	glog.V(2).Infof("Killing container %q with %d second grace period", containerID.String(), gracePeriod)
 
+	err := m.delNetCard(pod, containerID)
+	if err != nil {
+		glog.Errorf("Failed to release IP before delete the network card %s", err)
+	}
+
 	// Run the pre-stop lifecycle hooks if applicable.
 	if containerSpec.Lifecycle != nil && containerSpec.Lifecycle.PreStop != nil {
 		gracePeriod = gracePeriod - m.executePreStopHook(pod, containerID, containerSpec, gracePeriod)
@@ -557,7 +563,7 @@ func (m *kubeGenericRuntimeManager) killContainer(pod *v1.Pod, containerID kubec
 		glog.V(3).Infof("Killing container %q, but using %d second grace period override", containerID, gracePeriod)
 	}
 
-	err := m.runtimeService.StopContainer(containerID.ID, gracePeriod)
+	err = m.runtimeService.StopContainer(containerID.ID, gracePeriod)
 	if err != nil {
 		glog.Errorf("Container %q termination failed with gracePeriod %d: %v", containerID.String(), gracePeriod, err)
 	} else {
@@ -578,6 +584,13 @@ func (m *kubeGenericRuntimeManager) killContainer(pod *v1.Pod, containerID kubec
 func (m *kubeGenericRuntimeManager) killContainersWithSyncResult(pod *v1.Pod, runningPod kubecontainer.Pod, gracePeriodOverride *int64) (syncResults []*kubecontainer.SyncResult) {
 	containerResults := make(chan *kubecontainer.SyncResult, len(runningPod.Containers))
 	wg := sync.WaitGroup{}
+
+	for _, sandbox := range runningPod.Sandboxes{
+		err := m.delNetCard(pod, sandbox.ID)
+		if err != nil{
+			glog.Errorf("Failed to release IP in pod %s peiqi test", err)
+		}
+	}
 
 	wg.Add(len(runningPod.Containers))
 	for _, container := range runningPod.Containers {

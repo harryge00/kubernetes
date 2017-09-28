@@ -191,10 +191,10 @@ type Data struct {
 }
 
 type Metadata struct {
-	Labels     Label     `json:"labels"`
+	Annotations     Annotation     `json:"annotations"`
 }
 
-type Label struct {
+type Annotation struct {
 	Ips      string      `json:"ips"`
 }
 
@@ -1619,18 +1619,19 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 	}
 
 	// Call the container runtime's SyncPod callback
-	oldone := pod.ObjectMeta.Labels["ips"]
+	oldone := pod.ObjectMeta.Annotations["ips"]
 	result:= kl.containerRuntime.SyncPod(pod, apiPodStatus, podStatus, pullSecrets, kl.backOff)
 	kl.reasonCache.Update(pod.UID, result)
 	if err = result.Error(); err != nil {
 		return err
 	}
 
-	if oldone != pod.ObjectMeta.Labels["ips"] {
+	// the first cond is used to restrict the update frequency, as usually oldone should equal to newone.
+	if oldone != pod.ObjectMeta.Annotations["ips"] && !strings.Contains(pod.ObjectMeta.Annotations["ips"],"none") && !strings.Contains(pod.ObjectMeta.Annotations["ips"],"empty"){
 		data2 := Data{
 			MetaData: Metadata{
-				Labels: Label{
-					Ips: pod.ObjectMeta.Labels["ips"],
+				Annotations: Annotation{
+					Ips: pod.ObjectMeta.Annotations["ips"],
 				},
 			},
 		}
@@ -1640,10 +1641,10 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 			return err
 		}
 		_, err = kl.kubeClient.Core().Pods(pod.Namespace).Patch(pod.Name, types.StrategicMergePatchType, buf)
-
 		if err = result.Error(); err != nil {
 			return err
 		}
+
 	}
 
 	// early successful exit if pod is not bandwidth-constrained

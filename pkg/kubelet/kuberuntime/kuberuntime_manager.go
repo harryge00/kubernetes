@@ -75,6 +75,18 @@ type Transformation struct {
 	NetDevType string `json:"netDevType,omitempty"`
 }
 
+type Data struct {
+	MetaData  Metadata   `json:"metadata"`
+}
+
+type Metadata struct {
+	Labels     Label     `json:"labels"`
+}
+
+type Label struct {
+	Ips      string      `json:"ips"`
+}
+
 var (
 	// ErrVersionNotSupported is returned when the api version of runtime interface is not supported
 	ErrVersionNotSupported = errors.New("Runtime api version is not supported")
@@ -592,6 +604,11 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			glog.V(4).Infof("Stopping PodSandbox for %q, will start new one", format.Pod(pod))
 		}
 
+		// ensure IP release before teardown the pod
+		for containerID, _ := range podContainerChanges.ContainersToKill {
+			err := m.delNetCard(pod, containerID)
+			glog.V(4).Infof("Deleting network card before kill pod directly: if failed: %s", err)
+		}
 		killResult := m.killPodWithSyncResult(pod, kubecontainer.ConvertPodStatusToRunningPod(m.runtimeName, podStatus), nil)
 		result.AddPodSyncResult(killResult)
 		if killResult.Error() != nil {
@@ -635,6 +652,7 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 
 	// Step 4: Create a sandbox for the pod if necessary.
 	podSandboxID := podContainerChanges.SandboxID
+
 	if podContainerChanges.CreateSandbox && len(podContainerChanges.ContainersToStart) > 0 {
 		var msg string
 		var err error
@@ -779,19 +797,18 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			}
 		}
 	}
-
+	
 	containerId := kubecontainer.ContainerID{
 		Type: "docker",
 		ID: podSandboxID,
 	}
-
-	oldpod := pod.ObjectMeta.Labels["ips"]
+	oldpod := pod.ObjectMeta.Annotations["ips"]
 	label, err := m.addNetCard(pod, containerId)
-	pod.ObjectMeta.Labels["ips"] = label
+	pod.ObjectMeta.Annotations["ips"] = label
 	if err != nil {
 		glog.Infof("Failed to syn the second net card in the pod, %v", err)
 	}
-	if pod.ObjectMeta.Labels["ips"] != oldpod {
+	if pod.ObjectMeta.Annotations["ips"] != oldpod {
 		// Used to send event message to apiserver
 		ref := &v1.ObjectReference{
 			Name:      pod.Name,
@@ -1009,13 +1026,11 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 	m.netpluginLock.Lock()
 	defer  m.netpluginLock.Unlock()
 	label := pod.ObjectMeta.Labels["network"]
-	label2 := pod.ObjectMeta.Labels["ips"]
+	label2 := pod.ObjectMeta.Annotations["ips"]
 	devips := strings.Split(label2, "-")
-
-	if len(devips) <= 1 {
+	if label == "" && len(devips) <= 1 {
 		return "dev-none", nil
 	}
-
 	dev := devips[0]
 	if label == "" {
 		if label2 == "" || devips[1] == "none" {
@@ -1035,6 +1050,7 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 			}
 		}
 	} else {
+
 		err := m.macvlanPlugin.Labels(label)
 		if err != nil {
 			glog.Errorf("failed to pass label %v", err)
@@ -1066,18 +1082,9 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 				}
 				glog.Infof("Peiqi Determined pod ip after infra change: %s: %q", pod.Name, PodIP)
 
-				// After setup the card, we should add a label to registry the IP
-				labelsbefore := pod.GetLabels()
-				for key, value := range labelsbefore {
-					glog.Infof("key and value before is %v and %v", key, value)
-				}
-
 				dev := strings.Split(label, "-")[0]
 				dlabel = fmt.Sprintf("%s-%s", dev, PodIP.String())
-				pod.ObjectMeta.Labels["ips"] = dlabel
-				for key, value := range pod.GetLabels() {
-					glog.Infof("key and value in lables are %v and %v", key, value)
-				}
+				pod.ObjectMeta.Annotations["ips"] = dlabel
 
 				return dlabel, nil
 			}
@@ -1087,13 +1094,13 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 	return dev+"-empty", nil
 }
 
-func (ds *kubeGenericRuntimeManager) delNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) error {
-	if ds.macvlanPlugin.Name() == "macvlan" {
+func (m *kubeGenericRuntimeManager) delNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) error {
+	if m.macvlanPlugin.Name() == "macvlan" && pod != nil {
 		// here, we get the second network card ip to check its status.
-		err := ds.macvlanPlugin.TearDownPod(pod.Namespace, pod.Name, containerID)
+		err := m.macvlanPlugin.TearDownPod(pod.Namespace, pod.Name, containerID)
 		if err != nil {
 			glog.Errorf("Failed to delete the IP, please check.")
-			return  err
+			return err
 		}
 
 	}
