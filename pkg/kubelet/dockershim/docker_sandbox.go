@@ -160,6 +160,7 @@ func (ds *dockerService) StopPodSandbox(podSandboxID string) error {
 		m := status.GetMetadata()
 		namespace = m.Namespace
 		name = m.Name
+
 	} else {
 		var checkpoint *PodSandboxCheckpoint
 		checkpoint, checkpointErr = ds.checkpointHandler.GetCheckpoint(podSandboxID)
@@ -194,7 +195,6 @@ func (ds *dockerService) StopPodSandbox(podSandboxID string) error {
 		// Always trigger network plugin to tear down
 		needNetworkTearDown = true
 	}
-
 	// WARNING: The following operations made the following assumption:
 	// 1. kubelet will retry on any error returned by StopPodSandbox.
 	// 2. tearing down network and stopping sandbox container can succeed in any sequence.
@@ -209,9 +209,10 @@ func (ds *dockerService) StopPodSandbox(podSandboxID string) error {
 		if err := ds.networkPlugin.TearDownPod(namespace, name, cID); err != nil {
 			errList = append(errList, err)
 		}
+		glog.Infof("Tearing down pod: %v %v %v %v", namespace, name, cID, podSandboxID)
 		//do not registry error info.
 		//if err := ds.delNetCard(namespace, name, cID); err != nil {
-			//errList = append(errList, err)
+		//	errList = append(errList, err)
 		//}
 
 	}
@@ -307,7 +308,6 @@ func (ds *dockerService) PodSandboxStatus(podSandboxID string) (*runtimeapi.PodS
 	if err != nil {
 		return nil, err
 	}
-
 	// Parse the timstamps.
 	createdAt, _, _, err := getContainerTimestamps(r)
 	if err != nil {
@@ -696,15 +696,7 @@ func toCheckpointProtocol(protocol runtimeapi.Protocol) Protocol {
 	return "mmp", nil
 }*/
 
-/*func (ds *dockerService) delNetCard(Namespace, Name string, containerID kubecontainer.ContainerID) error {
-
-	podInfraContainer, err := ds.client.InspectContainer(string(containerID.ID))
-	glog.V(4).Infof("checking podInfraContainer after inspectContainer %v for macvlan, pod", podInfraContainer)
-	if err != nil {
-		glog.Errorf("Failed to inspect pod infra container: %v; Skipping pod %s", err,Name)
-		return err
-	}
-
+func (ds *dockerService) delNetCard(Namespace, Name string, containerID kubecontainer.ContainerID) error {
 	if ds.macvlanPlugin.PluginName() == "macvlan" {
 		// here, we get the second network card ip to check its status.
 		err := ds.macvlanPlugin.TearDownPod(Namespace, Name, containerID)
@@ -715,4 +707,4 @@ func toCheckpointProtocol(protocol runtimeapi.Protocol) Protocol {
 
 	}
 	return nil
-}*/
+}
