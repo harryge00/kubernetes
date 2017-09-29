@@ -196,6 +196,7 @@ type Metadata struct {
 
 type Annotation struct {
 	Ips      string      `json:"ips"`
+	Mask      string      `json:"mask"`
 }
 
 // Option is a functional option type for Kubelet
@@ -521,11 +522,11 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	glog.Infof("Hairpin mode set to %q", klet.hairpinMode)
 
 	//if plug, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
-	if plug, plug2, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, kubeCfg.MacvlanConfigFile, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
+	if plug, macvlanPlug, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, kubeCfg.MacvlanConfigFile, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
 		return nil, err
 	} else {
 		klet.networkPlugin = plug
-		klet.networkPlugin2 = plug2
+		klet.macvlanPlugin = macvlanPlug
 	}
 
 	machineInfo, err := klet.GetCachedMachineInfo()
@@ -621,6 +622,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		default:
 			return nil, fmt.Errorf("unsupported CRI runtime: %q", kubeCfg.ContainerRuntime)
 		}
+		glog.Info("Using NewKubeGenericRuntimeManager")
 		runtimeService, imageService, err := getRuntimeAndImageServices(kubeCfg)
 		runtime, err := kuberuntime.NewKubeGenericRuntimeManager(
 			kubecontainer.FilterEventRecorder(kubeDeps.Recorder),
@@ -630,7 +632,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 			klet.podManager,
 			kubeDeps.OSInterface,
 			klet.networkPlugin,
-			klet.networkPlugin2,
+			klet.macvlanPlugin,
 			klet,
 			klet.httpClient,
 			imageBackOff,
@@ -662,7 +664,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 				ContainerLogsDir,
 				kubeDeps.OSInterface,
 				klet.networkPlugin,
-				klet.networkPlugin2,
+				klet.macvlanPlugin,
 				klet,
 				klet.httpClient,
 				dockerExecHandler,
@@ -943,8 +945,8 @@ type Kubelet struct {
 	// Network plugin.
 	networkPlugin network.NetworkPlugin
 
-	// Network plugin2.
-	networkPlugin2 network.NetworkPlugin
+	// Macvlan network plugin
+	macvlanPlugin network.NetworkPlugin
 
 	// Handles container probing.
 	probeManager prober.Manager
@@ -1461,6 +1463,7 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 
 	// Generate final API pod status with pod and status manager status
 	apiPodStatus := kl.generateAPIPodStatus(pod, podStatus)
+	glog.V(6).Infof("generateAPIPodStatus %v", apiPodStatus)
 	// The pod IP may be changed in generateAPIPodStatus if the pod is using host network. (See #24576)
 	// TODO(random-liu): After writing pod spec into container labels, check whether pod is using host network, and
 	// set pod IP to hostIP directly in runtime.GetPodStatus
@@ -1619,25 +1622,27 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 	}
 
 	// Call the container runtime's SyncPod callback
-	oldone := pod.ObjectMeta.Annotations["ips"]
-	result:= kl.containerRuntime.SyncPod(pod, apiPodStatus, podStatus, pullSecrets, kl.backOff)
+	oldIps := pod.ObjectMeta.Annotations[network.IPAnnotationKey]
+	oldMask := pod.ObjectMeta.Annotations[network.MaskAnnotationKey]
+	result := kl.containerRuntime.SyncPod(pod, apiPodStatus, podStatus, pullSecrets, kl.backOff)
 	kl.reasonCache.Update(pod.UID, result)
 	if err = result.Error(); err != nil {
 		return err
 	}
 
-	// the first cond is used to restrict the update frequency, as usually oldone should equal to newone.
-	if oldone != pod.ObjectMeta.Annotations["ips"] && !strings.Contains(pod.ObjectMeta.Annotations["ips"],"none") && !strings.Contains(pod.ObjectMeta.Annotations["ips"],"empty"){
-		data2 := Data{
+	// the first cond is used to restrict the update frequency, as usually oldIps should equal to newone.
+	if oldIps != pod.ObjectMeta.Annotations[network.IPAnnotationKey] || oldMask != pod.ObjectMeta.Annotations[network.MaskAnnotationKey] {
+		updateMetadata := Data{
 			MetaData: Metadata{
 				Annotations: Annotation{
-					Ips: pod.ObjectMeta.Annotations["ips"],
+					Ips: pod.ObjectMeta.Annotations[network.IPAnnotationKey],
+					Mask: pod.ObjectMeta.Annotations[network.MaskAnnotationKey],
 				},
 			},
 		}
-		buf, err := json.Marshal(&data2)
+		buf, err := json.Marshal(&updateMetadata)
 		if err != nil {
-			fmt.Errorf("Failed to marshal data2 in kubelet, please check %v", err)
+			fmt.Errorf("Failed to marshal updateMetadata in kubelet, please check %v", err)
 			return err
 		}
 		_, err = kl.kubeClient.Core().Pods(pod.Namespace).Patch(pod.Name, types.StrategicMergePatchType, buf)
