@@ -42,7 +42,7 @@ type Data struct {
 	ResInfo  string  `json:"resinfo, omitempty"`
 	IP  	 string  `json:"ip, omitempty"`
 	Routes[] string  `json:"routes, omitempty"`
-	Mask	 uint  	 `json:"mask, omitempty"`
+	Mask	 int  	 `json:"mask, omitempty"`
 }
 
 type DataToDel struct {
@@ -92,7 +92,7 @@ func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componen
 		baseURL: addr,
 		client:  &http.Client{},
 	}
-
+	plugin.mask = 16
 	plugin.dclient, plugin.err = dockerclient.NewClient("unix:///var/run/docker.sock")
 	if plugin.err != nil{
 		glog.Errorf("Macvlan failed to connect to docker at local host %v", plugin.err)
@@ -136,12 +136,13 @@ func (plugin *macvlanNetworkPlugin) GetterIP(netType string) (string, error){
 		return "", err
 	}
 	ipv4 := data.IP
-	plugin.mask = int(data.Mask)
-
+	plugin.mask = data.Mask
+	glog.Infof("mask %v", data)
 	return ipv4, nil
 }
 
 func (plugin *macvlanNetworkPlugin) DeleteIP(netType, ipv4 string) error{
+	glog.Info("mask %v", plugin.mask)
 
 	datadel := DataToDel{
 		NetType: NetType(netType),
@@ -156,13 +157,14 @@ func (plugin *macvlanNetworkPlugin) DeleteIP(netType, ipv4 string) error{
 
 	body := bytes.NewBuffer(buf)
 	url := plugin.ipamclient.baseURL + "/resource/delete"
+	glog.Infof("deleting ip %v %v", url, datadel)
 	r, err := plugin.ipamclient.client.Post(url, "application/json", body)
 	if err != nil {
 		glog.Errorf("Macvlan failed to Post in Delete func, please check %v", err)
 		return  err
 	}
-	defer r.Body.Close()
 
+	defer r.Body.Close()
 	switch {
 	case r.StatusCode == int(404):
 		return fmt.Errorf("page not found")
@@ -172,6 +174,12 @@ func (plugin *macvlanNetworkPlugin) DeleteIP(netType, ipv4 string) error{
 		glog.Errorf("GET Status '%s' status code %d \n", r.Status, r.StatusCode)
 		return fmt.Errorf("%s", r.Status)
 	}
+	response, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		glog.Errorf("Macvlan failed to Read in DeleteIP response, please check %v", err)
+		return nil
+	}
+	glog.Infof("Successfully release IP:%v ", string(response))
 	return nil
 }
 
@@ -226,9 +234,9 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	}
 
 	// Add ip to annotation
-	if _, exist := annotations["ips"]; !exist {
-		annotations["ips"] = fmt.Sprintf("%s-%s", netdev[0], plugin.ipv4)
-	}
+	ips := fmt.Sprintf("%s-%s", netdev[0], ipv4)
+	annotations["ips"] = ips
+
 	err = plugin.cmdAdd(netdev[0], netns, parsedIP, gw)
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
@@ -436,6 +444,7 @@ func cmdDel(ifname string, netns string) error {
 	glog.Infof("del net card : %v/%v", ifname, netns)
 	err := ns.WithNetNSPath(netns, func(_ ns.NetNS) error {
 		if _, err := ip.DelLinkByNameAddr(ifname, netlink.FAMILY_V4); err != nil {
+			glog.Errorf("Failed to DelLinkByNameAddr: %v", err)
 			if err != ip.ErrLinkNotFound {
 				return err
 			}

@@ -811,7 +811,7 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		glog.Errorf("Failed to syn the second net card in the pod, %v", err)
 		return
 	}
-	glog.Infof("addNetCard Annotations %v", pod.ObjectMeta.Annotations)
+	glog.V(6).Infof("addNetCard Annotations %v", pod.ObjectMeta.Annotations)
 	pod.ObjectMeta.Annotations["ips"] = label
 	if pod.ObjectMeta.Annotations["ips"] != oldIPs {
 		// Used to send event message to apiserver
@@ -1038,10 +1038,11 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 	if label == "" && len(devips) <= 1 {
 		return "dev-none", nil
 	}
+
 	dev := devips[0]
 	if label == "" {
 		if label2 == "" || devips[1] == "none" {
-			glog.Info(label2)
+			//pod.ObjectMeta.Annotations["ips"] = dev+"-none"
 
 			return dev+"-none", nil
 		}
@@ -1055,18 +1056,24 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 			err = m.delNetCard(pod, containerID)
 			if err != nil {
 				glog.Errorf("delete macvlan card for updating macvlan Network error: %v; Skipping pod %s", err, pod.Name)
-				return dev+"-empty", err
+				// If failed to delNetCard, remain ips annotation
+				return pod.Annotations["ips"], err
 			}
+			return dev+"-empty", err
 		}
 	} else {
 
+		devType := strings.Split(label, "-")
+		if len(devType) != 2 {
+			// TODO: should we delete netcard if label is invalid?
+			return "dev-none", fmt.Errorf("Invalid network label: %s", label)
+		}
 		//err := m.macvlanPlugin.Labels(label)
 		//if err != nil {
 		//	glog.Errorf("failed to pass label %v", err)
 		//	return dev + "-empty", err
 		//}
 
-		var dlabel string
 		// if label is set, and in the syn period.
 
 		// here, we get the second network card ip to check its status.
@@ -1076,15 +1083,12 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 			err = m.macvlanPlugin.SetUpPod(pod.Namespace, pod.Name, containerID, pod.Annotations)
 			if err != nil {
 				glog.Errorf("Peiqi failed to setup pod for macvlan netcard %v", err)
-				return dev + "-empty", err
+				return pod.Annotations["ips"], err
 			}
-
-
-
-			return dlabel, nil
+			return pod.Annotations["ips"], nil
 		}
 
-		return fmt.Sprintf("%s-%s", strings.Split(label, "-")[0], stat.IP.String()), nil
+		return fmt.Sprintf("%s-%s", devType[0], stat.IP.String()), nil
 
 	}
 	return dev+"-empty", nil
