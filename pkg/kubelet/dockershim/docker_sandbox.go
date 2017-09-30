@@ -209,11 +209,11 @@ func (ds *dockerService) StopPodSandbox(podSandboxID string) error {
 		if err := ds.networkPlugin.TearDownPod(namespace, name, cID); err != nil {
 			errList = append(errList, err)
 		}
-		glog.Infof("Tearing down pod: %v %v %v %v", namespace, name, cID, podSandboxID)
+		glog.Infof("Tearing down pod: %v %v %v", namespace, name, cID.ID)
 		//do not registry error info.
-		//if err := ds.delNetCard(namespace, name, cID); err != nil {
-		//	errList = append(errList, err)
-		//}
+		if err := ds.delNetCard(namespace, name, cID); err != nil {
+			errList = append(errList, err)
+		}
 
 	}
 	if err := ds.client.StopContainer(podSandboxID, defaultSandboxGracePeriod); err != nil {

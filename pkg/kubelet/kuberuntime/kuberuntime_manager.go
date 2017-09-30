@@ -605,10 +605,10 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		}
 
 		// ensure IP release before teardown the pod
-		for containerID, _ := range podContainerChanges.ContainersToKill {
-			err := m.delNetCard(pod, containerID)
-			glog.V(4).Infof("Deleting network card before kill pod directly: if failed: %s", err)
-		}
+		//for containerID, _ := range podContainerChanges.ContainersToKill {
+		//	err := m.delNetCard(pod, containerID)
+		//	glog.V(4).Infof("Deleting network card before kill pod directly: if failed: %s", err)
+		//}
 		killResult := m.killPodWithSyncResult(pod, kubecontainer.ConvertPodStatusToRunningPod(m.runtimeName, podStatus), nil)
 		result.AddPodSyncResult(killResult)
 		if killResult.Error() != nil {
@@ -621,10 +621,10 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			glog.V(3).Infof("Killing unwanted container %q(id=%q) for pod %q", containerInfo.name, containerID, format.Pod(pod))
 			killContainerResult := kubecontainer.NewSyncResult(kubecontainer.KillContainer, containerInfo.name)
 			result.AddSyncResult(killContainerResult)
-			err := m.delNetCard(pod, containerID)
-			if err != nil {
-				glog.Errorf("Failed to delete the second card %s before kill the container", err)
-			}
+			//err := m.delNetCard(pod, containerID)
+			//if err != nil {
+			//	glog.Errorf("Failed to delete the second card %s before kill the container", err)
+			//}
 			if err := m.killContainer(pod, containerID, containerInfo.name, containerInfo.message, nil); err != nil {
 				killContainerResult.Fail(kubecontainer.ErrKillContainer, err.Error())
 				glog.Errorf("killContainer %q(id=%q) for pod %q failed: %v", containerInfo.name, containerID, format.Pod(pod), err)
@@ -805,14 +805,15 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		Type: "docker",
 		ID: podSandboxID,
 	}
-	oldpod := pod.ObjectMeta.Annotations["ips"]
+	oldIPs := pod.ObjectMeta.Annotations["ips"]
 	label, err := m.addNetCard(pod, containerId)
 	if err != nil {
 		glog.Errorf("Failed to syn the second net card in the pod, %v", err)
 		return
 	}
+	glog.Infof("addNetCard Annotations %v", pod.ObjectMeta.Annotations)
 	pod.ObjectMeta.Annotations["ips"] = label
-	if pod.ObjectMeta.Annotations["ips"] != oldpod {
+	if pod.ObjectMeta.Annotations["ips"] != oldIPs {
 		// Used to send event message to apiserver
 		ref := &v1.ObjectReference{
 			Name:      pod.Name,
@@ -1078,17 +1079,7 @@ func (m *kubeGenericRuntimeManager) addNetCard(pod *v1.Pod, containerID kubecont
 				return dev + "-empty", err
 			}
 
-			// here, we get the second network card ip to check its status.
-			PodStatus, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
-			PodIP := PodStatus.IP
-			if err != nil {
-				glog.Errorf("Peiqi Network error: %v; Skipping pod %s", err, pod.Name)
-			}
-			glog.Infof("Peiqi Determined pod ip after infra change: %s: %q", pod.Name, PodIP)
 
-			dev := strings.Split(label, "-")[0]
-			dlabel = fmt.Sprintf("%s-%s", dev, PodIP.String())
-			pod.ObjectMeta.Annotations["ips"] = dlabel
 
 			return dlabel, nil
 		}
@@ -1105,7 +1096,7 @@ func (m *kubeGenericRuntimeManager) delNetCard(pod *v1.Pod, containerID kubecont
 		// here, we get the second network card ip to check its status.
 		err := m.macvlanPlugin.TearDownPod(pod.Namespace, pod.Name, containerID)
 		if err != nil {
-			glog.Errorf("Failed to delete the IP, please check.")
+			glog.Errorf("Failed to delete the IP, please check. %v", err)
 			return err
 		}
 	}

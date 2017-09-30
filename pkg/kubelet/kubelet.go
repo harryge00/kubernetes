@@ -1462,6 +1462,7 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 
 	// Generate final API pod status with pod and status manager status
 	apiPodStatus := kl.generateAPIPodStatus(pod, podStatus)
+	glog.V(6).Infof("generateAPIPodStatus %v", apiPodStatus)
 	// The pod IP may be changed in generateAPIPodStatus if the pod is using host network. (See #24576)
 	// TODO(random-liu): After writing pod spec into container labels, check whether pod is using host network, and
 	// set pod IP to hostIP directly in runtime.GetPodStatus
