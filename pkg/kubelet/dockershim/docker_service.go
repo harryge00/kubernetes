@@ -185,16 +185,16 @@ func NewDockerService(client dockertools.DockerInterface, seccompProfileRoot str
 		&portMappingGetter{ds},
 	}
 	//glog.Infof("let's testing okokok cniPlugins %s , %s %s %s %s", cniPlugins, pluginSettings.PluginName, pluginSettings, pluginSettings.MacvlanPluginConfig, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
-	plug, plug2, err := network.InitNetworkPlugin(macPlugins, pluginSettings.PluginName, pluginSettings.MacvlanPluginConfig, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
+	plug, macvlanPlug, err := network.InitNetworkPlugin(macPlugins, pluginSettings.PluginName, pluginSettings.MacvlanPluginConfig, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("didn't find compatible CNI plugin with given settings %+v: %v", pluginSettings, err)
 	}
 	ds.networkPlugin = network.NewPluginManager(plug)
-	ds.macvlanPlugin = network.NewPluginManager(plug2)
+	ds.macvlanPlugin = network.NewPluginManager(macvlanPlug)
 
 	//ds.networkPlugin = plug
 	//ds.networkPlugin = plug2
-	glog.Infof("Docker cri networking managed by %v", plug2.Name())
+	glog.Infof("Docker cri networking managed by %v", macvlanPlug.Name())
 
 	// NOTE: cgroup driver is only detectable in docker 1.11+
 	cgroupDriver := defaultCgroupDriver

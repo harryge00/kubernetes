@@ -523,6 +523,7 @@ func (m *kubeGenericRuntimeManager) restoreSpecsFromContainerLabels(containerID 
 // * Stop the container.
 func (m *kubeGenericRuntimeManager) killContainer(pod *v1.Pod, containerID kubecontainer.ContainerID, containerName string, reason string, gracePeriodOverride *int64) error {
 	var containerSpec *v1.Container
+
 	if pod != nil {
 		containerSpec = kubecontainer.GetContainerSpec(pod, containerName)
 	} else {

@@ -9,7 +9,6 @@ import (
 	"net"
 	"strings"
 
-	"github.com/cloudflare/cfssl/log"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/cni/pkg/types/current"
@@ -22,10 +21,12 @@ import (
 	dockerclient "github.com/fsouza/go-dockerclient"
 	"sync"
 	"github.com/golang/glog"
+	"strconv"
 )
 
 const (
 	gw = "66.1.1.254"
+	defaultMask = 16
 )
 
 type NetConf struct {
@@ -43,7 +44,7 @@ type Data struct {
 	ResInfo  string  `json:"resinfo, omitempty"`
 	IP  	 string  `json:"ip, omitempty"`
 	Routes[] string  `json:"routes, omitempty"`
-	Mask	 uint  	 `json:"mask, omitempty"`
+	Mask	 int  	 `json:"mask, omitempty"`
 }
 
 type DataToDel struct {
@@ -69,6 +70,8 @@ type macvlanNetworkPlugin struct {
 	ipamclient  NWClient
 	ipv4        string
 	mask        int
+	dclient     *dockerclient.Client
+	err         error
 }
 
 func ProbeNetworkPlugins() []network.NetworkPlugin {
@@ -79,9 +82,11 @@ func ProbeNetworkPlugins() []network.NetworkPlugin {
 
 func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, master string, mode string, addr string, nonMasqueradeCIDR string, mtu int) error {
 	//noop
+	glog.Infof("Macvlan plugin initializing with %v %v %v", master, mode, addr)
 	plugin.Mutex = &sync.Mutex{}
 	plugin.host = host
 	plugin.macvlanName = "macvlan"
+
 	plugin.netconf = NetConf{
 		Master: master,
 		MTU:	mtu,
@@ -91,90 +96,96 @@ func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componen
 		baseURL: addr,
 		client:  &http.Client{},
 	}
-	return nil
-}
-
-func (plugin *macvlanNetworkPlugin) Labels(label string) error{
-	devatype := strings.Split(label, "-")
-	if len(devatype) != 2 {
-		plugin.netdev = devatype[0]
-		log.Infof("Macvlan failed to split label, please check %v", devatype)
-		return nil
+	// TODO: move default mask to config
+	plugin.mask = defaultMask
+	plugin.dclient, plugin.err = dockerclient.NewClient("unix:///var/run/docker.sock")
+	if plugin.err != nil{
+		glog.Errorf("Macvlan failed to connect to docker at local host %v", plugin.err)
 	}
-	plugin.netdev = devatype[0]
-	plugin.typer = devatype[1]
+
 	return nil
 }
 
-func (plugin *macvlanNetworkPlugin) GetterIP() (string, error){
+func (plugin *macvlanNetworkPlugin) GetterIP(netType string) (ipv4 string, mask int, err error){
+
 	//from plugin.typer, plugin.server to get IP and mask
 	data := Data{}
-	nettyper := NetType(plugin.typer)
+	nettyper := NetType(netType)
 	typer := Typer{
 		NetType: nettyper,
 	}
 	buf, err := json.Marshal(typer)
 	if err != nil {
-		log.Errorf("Macvlan failed to Marshal in GetterIP func, please check %v", err)
-		return "", err
+		glog.Errorf("Macvlan failed to Marshal in GetterIP func, please check %v", err)
+		return ipv4, mask, err
 	}
 
 	body := bytes.NewBuffer(buf)
 	url := plugin.ipamclient.baseURL + "/resource/allot"
 	r, err := plugin.ipamclient.client.Post(url, "application/json", body)
 	if err != nil {
-		log.Errorf("Macvlan failed to Post in GetterIP func, please check %v", err)
-		return "", err
+		glog.Errorf("Macvlan failed to Post in GetterIP func, please check %v", err)
+		return ipv4, mask, err
 	}
-	defer r.Body.Close()
 
 	response, err := ioutil.ReadAll(r.Body)
+	r.Body.Close()
 	if err != nil {
-		log.Errorf("Macvlan failed to Read in GetterIP func, please check %v", err)
-		return "", err
+		glog.Errorf("Macvlan failed to Read in GetterIP func, please check %v", err)
+		return ipv4, mask, err
 	}
 
 	err = json.Unmarshal(response, &data)
 	if err != nil {
-		log.Errorf("Macvlan failed to Unmarshal in GetterIP func, please check %v", err)
-		return "", err
+		glog.Errorf("Macvlan failed to Unmarshal in GetterIP func, please check %v", err)
+		return ipv4, mask, err
 	}
-	plugin.ipv4 = data.IP
-	plugin.mask = int(data.Mask)
-	return plugin.ipv4, nil
+	ipv4 = data.IP
+	// TODO: remove plugin.mask
+	plugin.mask = data.Mask
+	mask = plugin.mask
+	return ipv4, mask, nil
 }
 
-func (plugin *macvlanNetworkPlugin) DeleteIP(ipv4 string) error{
+func (plugin *macvlanNetworkPlugin) DeleteIP(netType, ipv4 string, mask int) error{
+	glog.Infof("DeleteIP type: %v, ip %v, mask %v", netType, ipv4, mask)
 
 	datadel := DataToDel{
-		NetType: NetType(plugin.typer),
+		NetType: NetType(netType),
 		Startip: ipv4,
-		Mask:    plugin.mask,
+		Mask:    mask,
 	}
 	buf, err := json.Marshal(datadel)
 	if err != nil {
-		log.Errorf("Macvlan failed to Marshal in DeleteIP func, please check %v", err)
+		glog.Errorf("Macvlan failed to Marshal in DeleteIP func, please check %v", err)
 		return  err
 	}
 
 	body := bytes.NewBuffer(buf)
 	url := plugin.ipamclient.baseURL + "/resource/delete"
+	glog.Infof("deleting ip %v %v", url, datadel)
 	r, err := plugin.ipamclient.client.Post(url, "application/json", body)
 	if err != nil {
-		log.Errorf("Macvlan failed to Post in Delete func, please check %v", err)
+		glog.Errorf("Macvlan failed to Post in Delete func, please check %v", err)
 		return  err
 	}
-	defer r.Body.Close()
 
+	defer r.Body.Close()
 	switch {
 	case r.StatusCode == int(404):
 		return fmt.Errorf("page not found")
 	case r.StatusCode == int(403):
 		return fmt.Errorf("access denied")
 	case r.StatusCode != int(200):
-		log.Errorf("GET Status '%s' status code %d \n", r.Status, r.StatusCode)
+		glog.Errorf("GET Status '%s' status code %d \n", r.Status, r.StatusCode)
 		return fmt.Errorf("%s", r.Status)
 	}
+	response, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		glog.Errorf("Macvlan failed to Read in DeleteIP response, please check %v", err)
+		return nil
+	}
+	glog.Infof("Successfully release IP:%v ", string(response))
 	return nil
 }
 
@@ -182,48 +193,93 @@ func (plugin *macvlanNetworkPlugin) Name() string {
 	return plugin.macvlanName
 }
 
-func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID, annotations map[string]string) error {
-	//plugin.Mutex.Lock()
-	//defer plugin.Mutex.Unlock()
+func getNetCardAndType(labels map[string]string) (error, []string) {
+	if labels["network"] == "" {
+		return fmt.Errorf("No network label"), nil
+	}
+	arr := strings.Split(labels["network"], "-")
+	if len(arr) != 2 {
+		return fmt.Errorf("Network label length error"), nil
+	}
+	return nil, arr
+}
 
-	docker, err := dockerclient.NewClient("unix:///var/run/docker.sock")
-	if err != nil{
-		log.Errorf("Macvlan Failed to connect to docker at local host %v", err)
+func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID, annotations map[string]string) error {
+	glog.Infof("SetUpPod %v/%v", namespace, name)
+	containerinfo, err := plugin.dclient.InspectContainer(id.ID)
+	if err != nil {
+		glog.Errorf("Macvlan failed to get container struct info %v", err)
+		return err
 	}
-	containerinfo, err := docker.InspectContainer(id.ID)
-	if err != nil{
-		log.Errorf("Macvlan Failed to get container struct info %v", err)
+	if err != nil {
+		return fmt.Errorf("Cannot get netType from: %v", err)
 	}
-	//we supposed netns link have been made for `ln -s /var/run/docker/netns /var/run` before add this second netdev
+	ips := annotations[network.IPAnnotationKey]
+	netdev := strings.Split(annotations[network.NetworkKey], "-")
+	if len(netdev) != 2 {
+		return fmt.Errorf("Cannot get netdev from: %v", annotations)
+	}
+	//we supposed netns link have been made for `ln -s /var/run/docker/netns /var/run` before add this second netType
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
 	netns, err := ns.GetNS(fullnetns)
 	if err != nil {
 		return fmt.Errorf("Macvlan failed to open netns %q: %v", netns, err)
 	}
+	defer netns.Close()
 
-	plugin.ipv4, err = plugin.GetterIP()
-	if err != nil {
-		fmt.Errorf("failed to get ipv4 from ipam in Getter IP %v", err)
+	var ipv4 string
+	var mask int
+	if strings.Contains(ips,"none") || strings.Contains(ips,"empty") || ips == "" {
+		ipv4, mask, err = plugin.GetterIP(netdev[1])
+		if err != nil {
+			return fmt.Errorf("failed to get ipv4 from ipam in Getter IP %v", err)
+		}
+		// Add ip to annotation
+		newIps := fmt.Sprintf("%s-%s", netdev[0], ipv4)
+		annotations[network.IPAnnotationKey] = newIps
+		// Remember the mask for releasing ip
+		maskAnnotation := fmt.Sprintf("%s-%d", netdev[0], mask)
+		glog.V(6).Infof("mask: %v", maskAnnotation)
+		annotations[network.MaskAnnotationKey] = maskAnnotation
+	} else {
+		// TODO: reconcile should be done in another function
+		strIPs := strings.Split(ips,"-")
+		if len(strIPs) != 2 {
+			return fmt.Errorf("Invalid ips annotation %v", ips)
+		}
+		ipv4 = strIPs[1]
+		strMask := strings.Split(annotations[network.MaskAnnotationKey],"-")
+		if len(strMask) != 2 {
+			return fmt.Errorf("Invalid mask annotation %v", annotations[network.MaskAnnotationKey])
+		}
+		mask, err = strconv.Atoi(strMask[1])
+		if err != nil {
+			return fmt.Errorf("Invalid mask annotation %v", annotations[network.MaskAnnotationKey])
+		}
 	}
-	err = plugin.cmdAdd(plugin.netdev, netns, plugin.ipv4, gw)
+	parsedIP := net.ParseIP(ipv4)
+	if parsedIP == nil {
+		return fmt.Errorf("Invalid ip: %s", ipv4)
+	}
+
+
+	err = plugin.cmdAdd(netdev[0], netns, parsedIP, gw, mask)
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
 	}
-	defer netns.Close()
 	return nil
 }
 
 func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.ContainerID) error {
-	//plugin.Mutex.Lock()
-	//defer plugin.Mutex.Unlock()
-
-	docker, err := dockerclient.NewClient("unix:///var/run/docker.sock")
+	glog.V(6).Infof("TearDownPod for %v/%v %v", namespace, name, id.ID)
+	containerinfo, err := plugin.dclient.InspectContainer(id.ID)
 	if err != nil{
-		log.Errorf("Failed to connect to docker at local host %v", err)
+		glog.Errorf("Failed to get container struct info %v", err)
+		return err
 	}
-	containerinfo, err := docker.InspectContainer(id.ID)
-	if err != nil{
-		log.Errorf("Failed to get container struct info %v", err)
+	err, netdev := getNetCardAndType(containerinfo.Config.Labels)
+	if err != nil {
+		return fmt.Errorf("Cannot get labels from %v", err)
 	}
 	//we supposed netns link have been made for `ln -s /var/run/docker/netns /var/run` before add this second netdev
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
@@ -232,45 +288,47 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 		glog.Errorf("failed to open netns %q: %v", netns, err)
 		return fmt.Errorf("failed to open netns %q: %v", netns, err)
 	}
+	defer netns.Close()
 	status, err := plugin.GetPodNetworkStatus(namespace, name, id)
 	if err != nil {
-		glog.Infof("failed to get pod network status during pod teardown %v: %v", status, err)
+		glog.Errorf("failed to get pod network status during pod teardown %v: %v", status, err)
 		return fmt.Errorf("failed to get pod network status during pod teardown %v: %v", status, err)
 	}
-	err = plugin.DeleteIP(status.IP.String())
+
+	err = plugin.DeleteIP(netdev[1], status.IP.String(), status.Mask)
 	if err != nil {
-		glog.Infof("Failed to delete IP from netns %v", err)
+		glog.Errorf("Failed to delete IP from netns %v", err)
 		return fmt.Errorf("Failed to delete IP from netns %v", err)
 	}
-	err = cmdDel(plugin.netdev, fullnetns)
+	err = cmdDel(netdev[0], fullnetns)
 	if err != nil {
-		glog.Infof("Failed to delete ifname from netns %v", err)
+		glog.Errorf("Failed to delete ifname from netns %v", err)
 		return fmt.Errorf("Failed to delete ifname from netns %v", err)
 	}
-	defer netns.Close()
+	glog.V(6).Infof("Successfully deletes macvlan netcard %v/%v %v", namespace, name, id.ID)
 	return nil
 
 }
 
 //if configured double net dev, we should to check the pod status for second net card
 func (plugin *macvlanNetworkPlugin) GetPodNetworkStatus(namespace string, name string, id kubecontainer.ContainerID) (*network.PodNetworkStatus, error) {
-	//netnsPath, err := plugin.host.GetNetNS(id.ID)
-
-	docker, err := dockerclient.NewClient("unix:///var/run/docker.sock")
+	glog.Infof("GetPodNetworkStatus %v/%v %v", namespace, name, id.ID)
+	c, err := plugin.dclient.InspectContainer(id.ID)
 	if err != nil{
-		log.Errorf("Failed to connect to docker at local host %v", err)
+		glog.Errorf("Failed to get container struct info %v", err)
+		return nil, err
 	}
-	c, err := docker.InspectContainer(id.ID)
-	if err != nil{
-		log.Errorf("Failed to get container struct info %v", err)
+	err, netdev := getNetCardAndType(c.Config.Labels)
+	glog.Infof("netdev:%v", netdev)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot get netdev from %v", err)
 	}
 	netnsPath := fmt.Sprintf("/proc/%v/ns/net", c.State.Pid)
 
-	if err != nil {
-		return nil, fmt.Errorf("Macvlan failed to retrieve network namespace path: %v", err)
-	}
-	cmd := fmt.Sprintf("nsenter --net=%s -F -- ip -o -4 addr show dev %s scope global", netnsPath, plugin.netdev)
+	cmd := fmt.Sprintf("nsenter --net=%s -F -- ip -o -4 addr show dev %s scope global", netnsPath, netdev[0])
+	glog.Info(cmd)
 	output, err := exec.New().Command("/bin/sh", "-c", cmd).CombinedOutput()
+	glog.Info(string(output))
 	if err != nil {
 		return nil, fmt.Errorf("Peiqi Macvlan Unexpected command output %s with error: %v", output, err)
 	}
@@ -287,7 +345,12 @@ func (plugin *macvlanNetworkPlugin) GetPodNetworkStatus(namespace string, name s
 	if err != nil {
 		return nil, fmt.Errorf("Peiqi Macvlan failed to parse ip from output %s due to %v", output, err)
 	}
-	return &network.PodNetworkStatus{IP: ip}, nil
+	var mask int
+	strArr := strings.Split(fields[3], "/")
+	if len(strArr) == 2 {
+		mask, _ = strconv.Atoi(strArr[1])
+	}
+	return &network.PodNetworkStatus{IP: ip, Mask: mask}, nil
 }
 
 func modeFromString(s string) (netlink.MacvlanMode, error) {
@@ -305,7 +368,7 @@ func modeFromString(s string) (netlink.MacvlanMode, error) {
 	}
 }
 
-func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS, ipv4 string, gw string) (*current.Interface, error) {
+func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS, ipv4 net.IP, gw string, mask int) (*current.Interface, error) {
 
 	macvlan := &current.Interface{}
 	mode, err := modeFromString(plugin.netconf.Mode)
@@ -319,7 +382,7 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 
 	tmpName, err := ip.RandomVethName()
 	if err != nil {
-		log.Errorf("Peiqi Macvlan failed to random name %v", err)
+		glog.Errorf("Peiqi Macvlan failed to random name %v", err)
 		return nil, err
 	}
 
@@ -348,23 +411,22 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 
 		iface, err := netlink.LinkByName(ifName)
 		if err != nil {
-			fmt.Printf("Peiqi Macvlan failed to get link by name: %v", ifName)
+			glog.Infof("Peiqi Macvlan failed to get link by name: %v", ifName)
 			return err
 		}
 
 		err = netlink.LinkSetUp(iface)
 		if err != nil {
-			fmt.Printf("Peiqi Macvlan failed to set link up %v", err)
+			glog.Infof("Peiqi Macvlan failed to set link up %v", err)
 			return err
 		}
 
-		ipv4 := net.ParseIP(ipv4)
-		netv4 := &net.IPNet{IP: ipv4, Mask: net.CIDRMask(plugin.mask, 32)}
+		netv4 := &net.IPNet{IP: ipv4, Mask: net.CIDRMask(mask, 32)}
 
 		ipaddr := &netlink.Addr{IPNet: netv4}
 		err = netlink.AddrAdd(iface, ipaddr)
 		if err != nil {
-			fmt.Printf("Peiqi Macvlan failed to add ipv4 address %v", err)
+			glog.Infof("Peiqi Macvlan failed to add ipv4 address %v", err)
 			return err
 		}
 
@@ -373,23 +435,10 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 			LinkIndex:  iface.Attrs().Index,
 			Scope:      netlink.SCOPE_UNIVERSE,
 			Dst:        netv4,
-			//Src:	    ipv4,
 		})
 		if err != nil {
-			fmt.Printf("Peiqi Macvlan failed to add ethernet route rules: %v", err)
+			glog.Errorf("Peiqi Macvlan failed to add ethernet route rules: %v", err)
 		}
-
-		// ip route add default via x.x.x.x dev ethx
-		/*dst := netlink.NewIPNet(net.ParseIP("0.0.0.0"))
-		err = netlink.RouteAdd(&netlink.Route{
-			LinkIndex:   iface.Attrs().Index,
-			Scope:       netlink.SCOPE_UNIVERSE,
-			Dst:	     dst,
-			Gw:	     net.ParseIP(gw),
-		})
-		if err != nil {
-			fmt.Printf("Peiqi Macvlan failed to set default gw for macvlan iface")
-		}*/
 
 		contMacvlan, err := netlink.LinkByName(ifName)
 		if err != nil {
@@ -401,28 +450,32 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 		return nil
 	})
 	if err != nil {
-		//plugin.netdev = ""
 		return nil, err
 	}
-	//ugin.netdev = ""
+	cmd := fmt.Sprintf("nsenter --net=%s -F -- ip -o -4 addr show", netns.Path())
+	glog.Info(cmd)
+	output, _ := exec.New().Command("/bin/sh", "-c", cmd).CombinedOutput()
+	glog.Info(string(output))
 	return macvlan, nil
 }
 
-func (plugin *macvlanNetworkPlugin) cmdAdd(ifname string, netns ns.NetNS, ipv4 string, gw string) error {
-	iface, err := plugin.createMacvlan(ifname, netns, ipv4, gw)
+func (plugin *macvlanNetworkPlugin) cmdAdd(ifname string, netns ns.NetNS, ipv4 net.IP, gw string, mask int) error {
+	iface, err := plugin.createMacvlan(ifname, netns, ipv4, gw, mask)
 	if err != nil{
-		log.Errorf("Peiqi Macvlan Failed to create macvlan %v", err)
+		glog.Errorf("Peiqi Macvlan Failed to create macvlan %v", err)
 		return err
 	}
-	fmt.Printf("Peiqi Macvlan interface getted is %v", iface)
+	glog.Infof("Peiqi Macvlan interface getted is %v", iface)
 	return nil
 }
 
 func cmdDel(ifname string, netns string) error {
 	// There is a netns so try to clean up. Delete can be called multiple times
 	// so don't return an error if the device is already removed.
+	glog.V(6).Infof("del net card : %v/%v", ifname, netns)
 	err := ns.WithNetNSPath(netns, func(_ ns.NetNS) error {
 		if _, err := ip.DelLinkByNameAddr(ifname, netlink.FAMILY_V4); err != nil {
+			glog.Errorf("Failed to DelLinkByNameAddr: %v", err)
 			if err != ip.ErrLinkNotFound {
 				return err
 			}
