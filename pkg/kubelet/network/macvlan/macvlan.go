@@ -223,7 +223,7 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
 	netns, err := ns.GetNS(fullnetns)
 	if err != nil {
-		return fmt.Errorf("Macvlan failed to open netns %q: %v", netns, err)
+		return fmt.Errorf("Macvlan failed to open netns %v: %v", netns, err)
 	}
 	defer netns.Close()
 
