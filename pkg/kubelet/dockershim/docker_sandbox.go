@@ -201,11 +201,9 @@ func (ds *dockerService) StopPodSandbox(podSandboxID string) error {
 		if err := ds.networkPlugin.TearDownPod(namespace, name, cID); err != nil {
 			errList = append(errList, err)
 		}
-		//do not registry error info.
-		if err := ds.delNetCard(namespace, name, cID); err != nil {
-			errList = append(errList, err)
-		}
-
+		// Ignore error info from delNetCard.
+		// TODO: This may lead to "ip leak", but it's better than blocking "StopPodSandbox"
+		ds.delNetCard(namespace, name, cID)
 	}
 	if err := ds.client.StopContainer(podSandboxID, defaultSandboxGracePeriod); err != nil {
 		glog.Errorf("Failed to stop sandbox %q: %v", podSandboxID, err)
