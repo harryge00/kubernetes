@@ -27,6 +27,7 @@ import (
 const (
 	gw = "66.1.1.254"
 	defaultMask = 16
+	macPrefix = "02:42"
 )
 
 type NetConf struct {
@@ -263,7 +264,7 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	}
 
 
-	err = plugin.cmdAdd(netdev[0], netns, parsedIP, gw, mask)
+	err = plugin.cmdAdd(netdev[0], netns, parsedIP, gw, mask, ipv4)
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
 	}
@@ -368,7 +369,30 @@ func modeFromString(s string) (netlink.MacvlanMode, error) {
 	}
 }
 
-func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS, ipv4 net.IP, gw string, mask int) (*current.Interface, error) {
+func generateMacAddr(ipv4 string) (net.HardwareAddr, error) {
+
+	macAddr := macPrefix //2 bytes prefix with 4 bytes from ipv4
+	ipArrary := strings.Split(ipv4, ".")
+
+	for _, v := range ipArrary {
+		q, err := strconv.Atoi(v)
+		if err != nil {
+			glog.Errorf("failed to translate ipv4 slice into int format %s", err)
+			return nil, err
+		}
+		macAddr = macAddr + fmt.Sprintf(":%02x", q)
+	}
+
+	mac, err := net.ParseMAC(macAddr)
+	if err != nil {
+		glog.Errorf("Failed to parse macaddress, please check the string format is correct, %s", err)
+		return nil, err
+	}
+	return mac, nil
+
+}
+
+func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS, ipv4 net.IP, gw string, mask int, ipv4str string) (*current.Interface, error) {
 
 	macvlan := &current.Interface{}
 	mode, err := modeFromString(plugin.netconf.Mode)
@@ -415,6 +439,18 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 			return err
 		}
 
+		// FIXME(Peiqi): generate MACADDR to fix mac ip pair.
+		MacAddr, err := generateMacAddr(ipv4str)
+		if err == nil {
+			err = netlink.LinkSetHardwareAddr(iface, MacAddr)
+			if err != nil{
+				glog.Errorf("failed to set macaddress %s", err)
+				return err
+			}
+		} else {
+			glog.Errorf("failed to generate an macaddress for ipv4")
+		}
+
 		err = netlink.LinkSetUp(iface)
 		if err != nil {
 			glog.Infof("Peiqi Macvlan failed to set link up %v", err)
@@ -459,8 +495,8 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 	return macvlan, nil
 }
 
-func (plugin *macvlanNetworkPlugin) cmdAdd(ifname string, netns ns.NetNS, ipv4 net.IP, gw string, mask int) error {
-	iface, err := plugin.createMacvlan(ifname, netns, ipv4, gw, mask)
+func (plugin *macvlanNetworkPlugin) cmdAdd(ifname string, netns ns.NetNS, ipv4 net.IP, gw string, mask int, ipv4str string) error {
+	iface, err := plugin.createMacvlan(ifname, netns, ipv4, gw, mask, ipv4str)
 	if err != nil{
 		glog.Errorf("Peiqi Macvlan Failed to create macvlan %v", err)
 		return err
