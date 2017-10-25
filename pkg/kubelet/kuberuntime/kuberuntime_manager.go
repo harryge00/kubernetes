@@ -65,26 +65,26 @@ const (
 
 // Used to patch second network card
 type Transformation struct {
-	EventType string `json:"eventType,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	PodName string	`json:"podName,omitempty"`
-	RcName string	`json:"rcName,omitempty"`
-	Action string `json:"action,omitempty"`
-	Ip string     `json:"ip,omitempty"`
+	EventType  string `json:"eventType,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	PodName    string `json:"podName,omitempty"`
+	RcName     string `json:"rcName,omitempty"`
+	Action     string `json:"action,omitempty"`
+	Ip         string `json:"ip,omitempty"`
 	NetDevName string `json:"netDevName,omitempty"`
 	NetDevType string `json:"netDevType,omitempty"`
 }
 
 type Data struct {
-	MetaData  Metadata   `json:"metadata"`
+	MetaData Metadata `json:"metadata"`
 }
 
 type Metadata struct {
-	Labels     Label     `json:"labels"`
+	Labels Label `json:"labels"`
 }
 
 type Label struct {
-	Ips      string      `json:"ips"`
+	Ips string `json:"ips"`
 }
 
 var (
@@ -666,8 +666,6 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			return
 		}
 
-
-
 		// If we ever allow updating a pod from non-host-network to
 		// host-network, we may use a stale IP.
 		if !kubecontainer.IsHostNetworkPod(pod) {
@@ -794,7 +792,7 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 	}
 	containerId := kubecontainer.ContainerID{
 		Type: "docker",
-		ID: podSandboxID,
+		ID:   podSandboxID,
 	}
 	// Update annotation "network" because the label cannot be used by SetUpPod
 	if pod.Annotations[network.NetworkKey] != pod.Labels[network.NetworkKey] {
@@ -813,16 +811,16 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		// Used to send event message to apiserver
 		ref := &v1.ObjectReference{
 			Name:      pod.Name,
-			Namespace: pod.Namespace,}
+			Namespace: pod.Namespace}
 
-		ret := strings.Split(label,"-")
+		ret := strings.Split(label, "-")
 		mess := Transformation{
-			EventType: "RcUpdate",
-			Action: "PodNetDevSync",
-			Ip:  ret[1],
-			Namespace: pod.Namespace,
-			PodName: pod.Name,
-			RcName: "",
+			EventType:  "RcUpdate",
+			Action:     "PodNetDevSync",
+			Ip:         ret[1],
+			Namespace:  pod.Namespace,
+			PodName:    pod.Name,
+			RcName:     "",
 			NetDevName: ret[0],
 			NetDevType: "",
 		}
@@ -1024,14 +1022,14 @@ func (m *kubeGenericRuntimeManager) UpdatePodCIDR(podCIDR string) error {
 }
 
 // To add a netcard, we demand IP GW POD NAMESPACE CONTAINERID and flag...
-func (m *kubeGenericRuntimeManager) syncNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) (string, error){
+func (m *kubeGenericRuntimeManager) syncNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) (string, error) {
 	glog.Infof("syncNetCard for %v/%v", pod.Namespace, pod.Name)
 	m.netpluginLock.Lock()
-	defer  m.netpluginLock.Unlock()
-	networkLabel := pod.ObjectMeta.Labels["network"]
+	defer m.netpluginLock.Unlock()
+	networkLabel := pod.ObjectMeta.Labels[network.NetworkKey]
 	ipLabel := pod.ObjectMeta.Annotations[network.IPAnnotationKey]
 	devips := strings.Split(ipLabel, "-")
-	glog.Infof("network:%v  ips:%v  ips:%v", networkLabel, ipLabel, devips)
+	glog.V(6).Infof("network:%v  ips:%v  ips:%v", networkLabel, ipLabel, devips)
 	if networkLabel == "" && len(devips) <= 1 {
 		return "dev-none", nil
 	}
@@ -1040,7 +1038,7 @@ func (m *kubeGenericRuntimeManager) syncNetCard(pod *v1.Pod, containerID kubecon
 	if networkLabel == "" {
 		if ipLabel == "" || devips[1] == "none" {
 			//pod.ObjectMeta.Annotations[network.IPAnnotationKey] = dev+"-none"
-			return dev+"-none", nil
+			return dev + "-none", nil
 		}
 		if devips[1] != "empty" {
 			// Should delete netcard
@@ -1050,7 +1048,7 @@ func (m *kubeGenericRuntimeManager) syncNetCard(pod *v1.Pod, containerID kubecon
 				// If failed to delNetCard, remain ips annotation
 				return pod.Annotations[network.IPAnnotationKey], err
 			}
-			return dev+"-empty", err
+			return dev + "-empty", err
 		}
 	} else {
 		devType := strings.Split(networkLabel, "-")
@@ -1075,7 +1073,7 @@ func (m *kubeGenericRuntimeManager) syncNetCard(pod *v1.Pod, containerID kubecon
 		return fmt.Sprintf("%s-%s", devType[0], stat.IP.String()), nil
 
 	}
-	return dev+"-empty", nil
+	return dev + "-empty", nil
 }
 
 func (m *kubeGenericRuntimeManager) delNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) error {

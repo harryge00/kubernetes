@@ -22,7 +22,7 @@ import (
 	"strings"
 	"sync"
 
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
+	"github.com/containernetworking/cni/libcni"
 	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -30,21 +30,24 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/network/hostport"
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
 	utilsysctl "k8s.io/kubernetes/pkg/util/sysctl"
-	"github.com/containernetworking/cni/libcni"
 
 	"sort"
 )
 
 const DefaultPluginName = "kubernetes.io/no-op"
+
 // The consts below are Used for macvlan plugin
-const MacvlanPluginName = "macvlan"
-const MaskAnnotationKey = "mask"
-const IPAnnotationKey = "ips"
-const NetworkKey = "network"
+const (
+	MacvlanPluginName = "macvlan"
+	MaskAnnotationKey = "mask"
+	IPAnnotationKey   = "ips"
+	NetworkKey        = "network"
+)
 
 // Called when the node's Pod CIDR is known when using the
 // controller manager's --allocate-node-cidrs=true option
@@ -108,7 +111,6 @@ type PodNetworkStatus struct {
 
 	// Used for macvlan to release IP
 	Mask int `json:"ipmask,omitempty" description:"Mask of the pod"`
-
 }
 
 // LegacyHost implements the methods required by network plugins that
@@ -181,7 +183,7 @@ func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, macvla
 		glog.Errorf("Must specify macvlan plugin config file path %v", macvlanPluginFile)
 		masterNet = "ens3"
 		mode = ""
-	}else {
+	} else {
 		files, err := libcni.ConfFiles(macvlanPluginFile)
 		switch {
 		case err != nil:
@@ -220,10 +222,9 @@ func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, macvla
 		if err := plug.Init(host, hairpinMode, "", "", "", nonMasqueradeCIDR, mtu); err != nil {
 			return nil, macvlanPlugin, err
 		}
-		return plug, macvlanPlugin,  nil
+		return plug, macvlanPlugin, nil
 	}
 
-	
 	pluginMap := map[string]NetworkPlugin{}
 
 	allErrs := []error{}
