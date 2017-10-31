@@ -64,11 +64,12 @@ const (
 )
 
 // Used to patch second network card
-type Transformation struct {
+type NetcardEvent struct {
 	EventType  string `json:"eventType,omitempty"`
 	Namespace  string `json:"namespace,omitempty"`
 	PodName    string `json:"podName,omitempty"`
-	RcName     string `json:"rcName,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Kind       string `json:"kind,omitempty"`
 	Action     string `json:"action,omitempty"`
 	Ip         string `json:"ip,omitempty"`
 	NetDevName string `json:"netDevName,omitempty"`
@@ -786,6 +787,7 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			}
 		}
 	}
+
 	if m.macvlanPlugin.Name() != network.MacvlanPluginName {
 		glog.V(6).Info("Not macvlan plugin, skip syncNetCard")
 		return
@@ -799,32 +801,35 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		pod.Annotations[network.NetworkKey] = pod.Labels[network.NetworkKey]
 	}
 	oldIPs := pod.ObjectMeta.Annotations[network.IPAnnotationKey]
-	label, err := m.syncNetCard(pod, containerId)
+	netcardName, netcardType, netIp, err := m.syncNetCard(pod, containerId)
 	if err != nil {
 		glog.Errorf("Failed to syn the second net card in the pod, %v", err)
 		return
 	}
 	glog.V(6).Infof("addNetCard Annotations %v", pod.ObjectMeta.Annotations)
-	pod.ObjectMeta.Annotations[network.IPAnnotationKey] = label
+	pod.ObjectMeta.Annotations[network.IPAnnotationKey] = fmt.Sprintf("%s-%s", netcardName, netIp)
 	if pod.ObjectMeta.Annotations[network.IPAnnotationKey] != oldIPs {
-		glog.V(6).Infof("Update ips label: oldIPs: %v newIPs %v", oldIPs, label)
+		glog.V(6).Infof("Update ips label: oldIPs: %v newIPs %v-%v", oldIPs, netcardName, netIp)
 		// Used to send event message to apiserver
 		ref := &v1.ObjectReference{
 			Name:      pod.Name,
 			Namespace: pod.Namespace}
 
-		ret := strings.Split(label, "-")
-		mess := Transformation{
+
+		netEvent := NetcardEvent{
 			EventType:  "RcUpdate",
 			Action:     "PodNetDevSync",
-			Ip:         ret[1],
+			Ip:         netIp,
 			Namespace:  pod.Namespace,
 			PodName:    pod.Name,
-			RcName:     "",
-			NetDevName: ret[0],
-			NetDevType: "",
+			NetDevName: netcardName,
+			NetDevType: netcardType,
 		}
-		buffer, err := json.Marshal(&mess)
+		if len(pod.OwnerReferences) > 0 {
+			netEvent.Kind = pod.OwnerReferences[0].Kind
+			netEvent.Name = pod.OwnerReferences[0].Name
+		}
+		buffer, err := json.Marshal(&netEvent)
 		if err != nil {
 			glog.Errorf("Failed to marshal buffer in kubelet, please check %v", err)
 		}
@@ -1022,58 +1027,68 @@ func (m *kubeGenericRuntimeManager) UpdatePodCIDR(podCIDR string) error {
 }
 
 // To add a netcard, we demand IP GW POD NAMESPACE CONTAINERID and flag...
-func (m *kubeGenericRuntimeManager) syncNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) (string, error) {
+
+func (m *kubeGenericRuntimeManager) syncNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) (netcardName string, netcardType string, ip string, err error) {
 	glog.Infof("syncNetCard for %v/%v", pod.Namespace, pod.Name)
 	m.netpluginLock.Lock()
 	defer m.netpluginLock.Unlock()
-	networkLabel := pod.ObjectMeta.Labels[network.NetworkKey]
+	ip = "none"
+	netcardName = "dev"
+	netcardType = "InnerNet"
+	networkLabel := pod.ObjectMeta.Labels["network"]
 	ipLabel := pod.ObjectMeta.Annotations[network.IPAnnotationKey]
 	devips := strings.Split(ipLabel, "-")
 	glog.V(6).Infof("network:%v  ips:%v  ips:%v", networkLabel, ipLabel, devips)
 	if networkLabel == "" && len(devips) <= 1 {
-		return "dev-none", nil
+		return
 	}
 
-	dev := devips[0]
+	netcardName = devips[0]
+	ip = devips[1]
 	if networkLabel == "" {
-		if ipLabel == "" || devips[1] == "none" {
+		if ipLabel == "" || ip == "none" {
 			//pod.ObjectMeta.Annotations[network.IPAnnotationKey] = dev+"-none"
-			return dev + "-none", nil
+			ip = "none"
+			return
 		}
-		if devips[1] != "empty" {
+		if ip != "empty" {
 			// Should delete netcard
-			err := m.delNetCard(pod, containerID)
+			err = m.delNetCard(pod, containerID)
 			if err != nil {
 				glog.Errorf("delete macvlan card for updating macvlan Network error: %v; Skipping pod %s", err, pod.Name)
 				// If failed to delNetCard, remain ips annotation
-				return pod.Annotations[network.IPAnnotationKey], err
+				return
 			}
-			return dev + "-empty", err
+			ip = "empty"
+			return
 		}
 	} else {
 		devType := strings.Split(networkLabel, "-")
 		if len(devType) != 2 {
 			// TODO: should we delete netcard if label is invalid?
-			return "dev-none", fmt.Errorf("Invalid network label: %s", networkLabel)
+			err = fmt.Errorf("Invalid network label: %s", networkLabel)
+			return
 		}
+		netcardName = devType[0]
+		netcardType = devType[1]
 		// if network label is set, and in the syn period.
 		// here, we get the second network card ip to check its status.
-		stat, err := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
-		if err != nil {
+		stat, StatErr := m.macvlanPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+		if StatErr != nil {
 			glog.Warningf("GetPodNetworkStatus err: %v;  SetUpPod again for %s", err, pod.Name)
 			err = m.macvlanPlugin.SetUpPod(pod.Namespace, pod.Name, containerID, pod.Annotations)
 			if err != nil {
 				glog.Errorf("Peiqi failed to setup pod for macvlan netcard %v", err)
-				return pod.Annotations[network.IPAnnotationKey], err
 			}
-			return pod.Annotations[network.IPAnnotationKey], nil
+			return
 		}
 		// Update mask to annotation
-		pod.Annotations[network.MaskAnnotationKey] = fmt.Sprintf("%s-%d", devType[0], stat.Mask)
-		return fmt.Sprintf("%s-%s", devType[0], stat.IP.String()), nil
-
+		pod.Annotations[network.MaskAnnotationKey] = fmt.Sprintf("%s-%d", netcardName, stat.Mask)
+		ip = stat.IP.String()
+		return
 	}
-	return dev + "-empty", nil
+	ip = "empty"
+	return
 }
 
 func (m *kubeGenericRuntimeManager) delNetCard(pod *v1.Pod, containerID kubecontainer.ContainerID) error {
