@@ -267,6 +267,7 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
 	}
+	glog.V(6).Infof("Successfully SetUpPod for %v/%v", namespace, name)
 	return nil
 }
 
@@ -321,7 +322,7 @@ func (plugin *macvlanNetworkPlugin) GetPodNetworkStatus(namespace string, name s
 	err, netdev := getNetCardAndType(c.Config.Labels)
 	glog.Infof("netdev:%v", netdev)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot get netdev from %v", err)
+		return nil, fmt.Errorf("Cannot get netdev from %v: %v", name, err)
 	}
 	netnsPath := fmt.Sprintf("/proc/%v/ns/net", c.State.Pid)
 
@@ -500,7 +501,7 @@ func (plugin *macvlanNetworkPlugin) cmdAdd(ifname string, netns ns.NetNS, ipv4 n
 		glog.Errorf("Peiqi Macvlan Failed to create macvlan %v", err)
 		return err
 	}
-	glog.Infof("Peiqi Macvlan interface getted is %v", iface)
+	glog.V(6).Infof("Peiqi Macvlan interface getted is %v", iface)
 	return nil
 }
 
