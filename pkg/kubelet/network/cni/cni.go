@@ -281,7 +281,6 @@ func (network *cniNetwork) deleteFromNetwork(podName string, podNamespace string
 	return nil
 }
 
-
 func buildCNIRuntimeConf(podName string, podNs string, podInfraContainerID kubecontainer.ContainerID, podNetnsPath string) (*libcni.RuntimeConf, error) {
 	glog.V(4).Infof("Got netns path %v", podNetnsPath)
 	glog.V(4).Infof("Using netns path %v", podNs)
@@ -300,6 +299,3 @@ func buildCNIRuntimeConf(podName string, podNs string, podInfraContainerID kubec
 
 	return rt, nil
 }
-
-
-
