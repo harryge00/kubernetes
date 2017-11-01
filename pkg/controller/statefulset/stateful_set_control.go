@@ -136,8 +136,8 @@ func (ssc *defaultStatefulSetControl) UpdateStatefulSet(set *apps.StatefulSet, p
 		if !isCreated(replicas[i]) {
 			// Add "ips" and "mask" annotation before creating pods
 			if i < len(ipArr) && i < len(maskArr) {
-				replicas[i].Annotations[network.IPAnnotationKey] = ipArr[i]
-				replicas[i].Annotations[network.MaskAnnotationKey] = maskArr[i]
+				replicas[i].ObjectMeta.Annotations[network.IPAnnotationKey] = ipArr[i]
+				replicas[i].ObjectMeta.Annotations[network.MaskAnnotationKey] = maskArr[i]
 			}
 			glog.Info(i, replicas[i].Name, replicas[i].Annotations)
 			return ssc.podControl.CreateStatefulPod(set, replicas[i])

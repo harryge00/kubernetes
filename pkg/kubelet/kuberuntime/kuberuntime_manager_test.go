@@ -42,6 +42,7 @@ var (
 	fakeCreatedAt int64 = 1
 )
 
+// TODO: add tests.
 func createTestRuntimeManager() (*apitest.FakeRuntimeService, *apitest.FakeImageService, *kubeGenericRuntimeManager, error) {
 	fakeRuntimeService := apitest.NewFakeRuntimeService()
 	fakeImageService := apitest.NewFakeImageService()
@@ -49,16 +50,17 @@ func createTestRuntimeManager() (*apitest.FakeRuntimeService, *apitest.FakeImage
 	// data in machineInfo is not used. If burstable containers are used in unit test in the future,
 	// we may want to set memory capacity.
 	machineInfo := &cadvisorapi.MachineInfo{}
-	networkPlugin, _ := network.InitNetworkPlugin(
+	networkPlugin, macvlanPlugin, _ := network.InitNetworkPlugin(
 		[]network.NetworkPlugin{},
 		"",
+		"macvlan",
 		nettest.NewFakeHost(nil),
 		componentconfig.HairpinNone,
 		"10.0.0.0/8",
 		network.UseDefaultMTU,
 	)
 	osInterface := &containertest.FakeOS{}
-	manager, err := NewFakeKubeRuntimeManager(fakeRuntimeService, fakeImageService, machineInfo, networkPlugin, osInterface, &containertest.FakeRuntimeHelper{})
+	manager, err := NewFakeKubeRuntimeManager(fakeRuntimeService, fakeImageService, machineInfo, networkPlugin, macvlanPlugin, osInterface, &containertest.FakeRuntimeHelper{})
 	return fakeRuntimeService, fakeImageService, manager, err
 }
 
