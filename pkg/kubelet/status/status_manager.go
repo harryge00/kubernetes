@@ -420,7 +420,8 @@ func (m *manager) syncBatch() {
 func (m *manager) recorderPodEvents(pod *v1.Pod, oldStatus v1.PodStatus, newStatus v1.PodStatus) {
 	if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
 		ref := pod.OwnerReferences[0]
-		if ref.Kind == "ReplicationController" {
+		switch ref.Kind {
+		case "ReplicationController":
 			if IsPodReady(&pod.Spec, oldStatus.ContainerStatuses) != IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
 				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
 					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
@@ -432,8 +433,7 @@ func (m *manager) recorderPodEvents(pod *v1.Pod, oldStatus v1.PodStatus, newStat
 					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
 				}
 			}
-		}
-		if ref.Kind == "Job" {
+		case "Job":
 			if IsPodReady(&pod.Spec, oldStatus.ContainerStatuses) != IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
 				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
 					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
@@ -450,6 +450,18 @@ func (m *manager) recorderPodEvents(pod *v1.Pod, oldStatus v1.PodStatus, newStat
 				pod.Status.Phase != v1.PodRunning &&
 				pod.Status.Phase != v1.PodPending  {
 				util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", string(pod.Status.Phase))
+			}
+		case "StatefulSet":
+			if IsPodReady(&pod.Spec, oldStatus.ContainerStatuses) != IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
+				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
+					util.RecordStatefulSetEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodReady")
+				} else {
+					util.RecordStatefulSetEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
+				}
+			} else {
+				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
+					util.RecordStatefulSetEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
+				}
 			}
 		}
 	}

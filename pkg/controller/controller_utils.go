@@ -565,11 +565,13 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 			return nil
 		}
 		glog.V(4).Infof("Controller %v created pod %v", accessor.GetName(), newPod.Name)
-		if controllerRef.Kind == "ReplicationController" {
+		switch controllerRef.Kind {
+		case "ReplicationController":
 			util.RecordRCEvent(r.Recorder , controllerRef.Name, newPod.Namespace ,newPod.Name, "RcPodAdd", "RcPodAdd")
-		}
-		if controllerRef.Kind == "Job" {
+		case "Job":
 			util.RecordJobEvent(r.Recorder , controllerRef.Name, newPod.Namespace ,newPod.Name, "JobPodAdd", "JobPodAdd")
+		case "StatefulSet":
+			util.RecordStatefulSetEvent(r.Recorder , controllerRef.Name, newPod.Namespace ,newPod.Name, "StatefulSetPodAdd", "StatefulSetPodAdd")
 		}
 
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulCreatePodReason, "Created pod: %v", newPod.Name)
@@ -593,11 +595,13 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 		return fmt.Errorf("unable to delete pods: %v", err)
 	} else {
 		if pod != nil && len(pod.OwnerReferences) > 0 {
-			if pod.OwnerReferences[0].Kind == "ReplicationController" {
-				util.RecordRCEvent(r.Recorder, accessor.GetName() , namespace, podID, "RcPodDelete", "RcPodDelete")
-			}
-			if pod.OwnerReferences[0].Kind == "Job" {
-				util.RecordJobEvent(r.Recorder, accessor.GetName(), namespace, podID, "JobPodDelete", "JobPodDelete")
+			switch pod.OwnerReferences[0].Kind {
+			case "ReplicationController":
+				util.RecordRCEvent(r.Recorder , accessor.GetName(), namespace ,podID, "RcPodDelete", "RcPodDelete")
+			case "Job":
+				util.RecordJobEvent(r.Recorder , accessor.GetName(), namespace ,podID, "JobPodDelete", "JobPodDelete")
+			case "StatefulSet":
+				util.RecordStatefulSetEvent(r.Recorder , accessor.GetName(), namespace ,podID, "StatefulSetPodDelete", "StatefulSetPodDelete")
 			}
 			r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 		}
