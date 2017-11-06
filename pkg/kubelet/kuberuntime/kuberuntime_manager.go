@@ -743,11 +743,13 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		if v1.IsPodReady(pod) {
 			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
 				ref := pod.OwnerReferences[0]
-				if ref.Kind == "ReplicationController" {
+				switch ref.Kind {
+				case "ReplicationController":
 					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
-				}
-				if ref.Kind == "Job" {
+				case "Job":
 					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+				case "StatefulSet":
+					util.RecordStatefulSetEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
 				}
 			}
 		}
@@ -773,16 +775,18 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			continue
 		}
 	}
-
 	if podContainerChanges.CreateSandbox {
 		if v1.IsPodReady(pod) {
 			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
 				ref := pod.OwnerReferences[0]
-				if ref.Kind == "ReplicationController" {
+				// TODO: maybe deprecated because events are not sent from here.
+				switch ref.Kind {
+				case "ReplicationController":
 					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
-				}
-				if ref.Kind == "Job" {
+				case "Job":
 					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
+				case "StatefulSet":
+					util.RecordStatefulSetEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodReady")
 				}
 			}
 		}

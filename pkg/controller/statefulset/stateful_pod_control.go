@@ -31,6 +31,7 @@ import (
 	appslisters "k8s.io/kubernetes/pkg/client/listers/apps/v1beta1"
 	corelisters "k8s.io/kubernetes/pkg/client/listers/core/v1"
 	"k8s.io/kubernetes/pkg/client/retry"
+	util "k8s.io/kubernetes/pkg/util/podchanges"
 )
 
 // StatefulPodControlInterface defines the interface that StatefulSetController uses to create, update, and delete Pods,
@@ -88,6 +89,8 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 		return err
 	}
 	spc.recordPodEvent("create", set, pod, err)
+	// Send events for servicemanager.
+	util.RecordStatefulSetEvent(spc.recorder , set.Name, set.Namespace ,pod.Name, "StatefulSetPodAdd", "StatefulSetPodAdd")
 	return err
 }
 
@@ -147,6 +150,9 @@ func (spc *realStatefulPodControl) UpdateStatefulPod(set *apps.StatefulSet, pod 
 func (spc *realStatefulPodControl) DeleteStatefulPod(set *apps.StatefulSet, pod *v1.Pod) error {
 	err := spc.client.Core().Pods(set.Namespace).Delete(pod.Name, nil)
 	spc.recordPodEvent("delete", set, pod, err)
+	// Send events for servicemanager.
+	util.RecordStatefulSetEvent(spc.recorder , set.Name, set.Namespace ,pod.Name, "StatefulSetPodDelete", "StatefulSetPodDelete")
+
 	return err
 }
 
