@@ -37,6 +37,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/goroutinemap/exponentialbackoff"
 	vol "k8s.io/kubernetes/pkg/volume"
 
+	"encoding/json"
 	"github.com/golang/glog"
 )
 
@@ -209,6 +210,14 @@ type PersistentVolumeController struct {
 	alphaProvisioner vol.ProvisionableVolumePlugin
 }
 
+type BoundEvent struct {
+	PodName   string `json:"podname,omitempty"`
+	PVC       string `json:"pvc,omitempty"`
+	PV        string `json:"pv,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Message   string `json:"Message,omitempty"`
+}
+
 // syncClaim is the main controller method to decide what to do with a claim.
 // It's invoked by appropriate cache.Controller callbacks when a claim is
 // created, updated or periodically synced. We do not differentiate between
@@ -223,6 +232,24 @@ func (ctrl *PersistentVolumeController) syncClaim(claim *v1.PersistentVolumeClai
 	} else {
 		return ctrl.syncBoundClaim(claim)
 	}
+}
+
+func (ctrl *PersistentVolumeController) sendBoundEvent(claim *v1.PersistentVolumeClaim, volume *v1.PersistentVolume, msg string) {
+	event := BoundEvent{
+		PVC:       claim.Name,
+		Namespace: claim.Namespace,
+		PodName:   claim.ObjectMeta.Labels["podname"],
+	}
+	if volume != nil {
+		event.PV = volume.Name
+	}
+	if msg != "" {
+		event.Message = msg
+	}
+
+	message, _ := json.Marshal(event)
+
+	ctrl.eventRecorder.Event(claim, v1.EventTypeNormal, "PvUpdate", string(message))
 }
 
 // syncUnboundClaim is the main controller method to decide what to do with an
@@ -255,6 +282,8 @@ func (ctrl *PersistentVolumeController) syncUnboundClaim(claim *v1.PersistentVol
 			if _, err = ctrl.updateClaimStatus(claim, v1.ClaimPending, nil); err != nil {
 				return err
 			}
+			// Send unsuccessful events
+			ctrl.sendBoundEvent(claim, nil, "no persistent volumes available for this claim and no storage class is set")
 			return nil
 		} else /* pv != nil */ {
 			// Found a PV for this claim
@@ -265,7 +294,9 @@ func (ctrl *PersistentVolumeController) syncUnboundClaim(claim *v1.PersistentVol
 				// syncClaim will finish the binding.
 				return err
 			}
-			// OBSERVATION: claim is "Bound", pv is "Bound"
+			// OBSERVATION: claim is "Bound", pv is "Bound
+			// Return successful binding events
+			ctrl.sendBoundEvent(claim, volume, "")
 			return nil
 		}
 	} else /* pvc.Spec.VolumeName != nil */ {
