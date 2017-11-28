@@ -108,7 +108,7 @@ func RecordJobEvent(recorder record.EventRecorder, jobName, namespace, podName, 
 		Namespace: namespace,
 	}
 
-	glog.V(2).Infof("Recording %s event message for replication %s", event, jobName)
+	glog.V(2).Infof("Recording %s event message for Job %s", event, jobName)
 	transformation := JobTransformation{
 		JobName:   jobName,
 		Namespace: namespace,

@@ -47,6 +47,8 @@ const (
 	MaskAnnotationKey = "mask"
 	IPAnnotationKey   = "ips"
 	NetworkKey        = "network"
+	// Label for network groups
+	GroupedLabel = "networkgroup"
 )
 
 // Called when the node's Pod CIDR is known when using the
