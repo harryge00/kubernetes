@@ -59,6 +59,41 @@ func TestStatefulPodControlCreatesPods(t *testing.T) {
 		t.Errorf("StatefulPodControl failed to create Pod error: %s", err)
 	}
 	events := collectEvents(recorder.Events)
+	if eventCount := len(events); eventCount != 3 {
+		t.Errorf("Expected 3 events for successful create found %d", eventCount)
+	}
+	for i := range events {
+		if !strings.Contains(events[i], v1.EventTypeNormal) {
+			t.Errorf("Expected normal events found %s", events[i])
+		}
+	}
+}
+
+// TODO: implement it.
+func TestStatefulPodControlCreatesNetGroupPods(t *testing.T) {
+	recorder := record.NewFakeRecorder(10)
+	set := newStatefulSetWithNetworkGroup(3, "foo")
+	pod := newStatefulSetPod(set, 0)
+	fakeClient := &fake.Clientset{}
+	pvcIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	pvcLister := corelisters.NewPersistentVolumeClaimLister(pvcIndexer)
+	control := NewRealStatefulPodControl(fakeClient, nil, nil, pvcLister, recorder)
+	fakeClient.AddReactor("get", "persistentvolumeclaims", func(action core.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewNotFound(action.GetResource().GroupResource(), action.GetResource().Resource)
+	})
+	fakeClient.AddReactor("create", "persistentvolumeclaims", func(action core.Action) (bool, runtime.Object, error) {
+		create := action.(core.CreateAction)
+		return true, create.GetObject(), nil
+	})
+	fakeClient.AddReactor("create", "pods", func(action core.Action) (bool, runtime.Object, error) {
+		create := action.(core.CreateAction)
+		return true, create.GetObject(), nil
+	})
+
+	if err := control.CreateStatefulPod(set, pod); err != nil {
+		t.Errorf("StatefulPodControl failed to create Pod error: %s", err)
+	}
+	events := collectEvents(recorder.Events)
 	if eventCount := len(events); eventCount != 2 {
 		t.Errorf("Expected 2 events for successful create found %d", eventCount)
 	}
@@ -187,8 +222,8 @@ func TestStatefulPodControlCreatePodFailed(t *testing.T) {
 		t.Error("Failed to produce error on Pod creation failure")
 	}
 	events := collectEvents(recorder.Events)
-	if eventCount := len(events); eventCount != 2 {
-		t.Errorf("Expected 2 events for failed Pod create found %d", eventCount)
+	if eventCount := len(events); eventCount != 3 {
+		t.Errorf("Expected 3 events for failed Pod create found %d", eventCount)
 	} else if !strings.Contains(events[0], v1.EventTypeNormal) {
 		t.Errorf("Expected normal event found %s", events[0])
 
@@ -435,8 +470,8 @@ func TestStatefulPodControlDeletesStatefulPod(t *testing.T) {
 		t.Errorf("Error returned on successful delete: %s", err)
 	}
 	events := collectEvents(recorder.Events)
-	if eventCount := len(events); eventCount != 1 {
-		t.Errorf("Expected 1 events for successful delete found %d", eventCount)
+	if eventCount := len(events); eventCount != 2 {
+		t.Errorf("Expected 2 events for successful delete found %d", eventCount)
 	} else if !strings.Contains(events[0], v1.EventTypeNormal) {
 		t.Errorf("Expected normal event found %s", events[0])
 	}
@@ -455,8 +490,8 @@ func TestStatefulPodControlDeleteFailure(t *testing.T) {
 		t.Error("Fialed to return error on failed delete")
 	}
 	events := collectEvents(recorder.Events)
-	if eventCount := len(events); eventCount != 1 {
-		t.Errorf("Expected 1 events for failed delete found %d", eventCount)
+	if eventCount := len(events); eventCount != 2 {
+		t.Errorf("Expected 2 events for failed delete found %d", eventCount)
 	} else if !strings.Contains(events[0], v1.EventTypeWarning) {
 		t.Errorf("Expected warning event found %s", events[0])
 	}
