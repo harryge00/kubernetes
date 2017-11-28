@@ -466,6 +466,7 @@ func (rm *ReplicationManager) manageReplicas(filteredPods []*v1.Pod, rc *v1.Repl
 					BlockOwnerDeletion: boolPtr(true),
 					Controller:         boolPtr(true),
 				}
+
 				err = rm.podControl.CreatePodsWithControllerRef(rc.Namespace, rc.Spec.Template, rc, controllerRef)
 				if err != nil {
 					// Decrement the expected number of creates because the informer won't observe this pod

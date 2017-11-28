@@ -19,12 +19,10 @@ package statefulset
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"k8s.io/client-go/pkg/api"
 	"k8s.io/kubernetes/pkg/api/v1"
 	apps "k8s.io/kubernetes/pkg/apis/apps/v1beta1"
-	"k8s.io/kubernetes/pkg/kubelet/network"
 
 	"github.com/golang/glog"
 )
@@ -119,9 +117,6 @@ func (ssc *defaultStatefulSetControl) UpdateStatefulSet(set *apps.StatefulSet, p
 	if set.DeletionTimestamp != nil {
 		return nil
 	}
-	// annotation like "iparray: eth2-192.168.11.1,eth2-192.168.11.2,192.168.11.3"
-	ipArr := strings.Split(set.Annotations[network.IPAnnotationKey], ",")
-	maskArr := strings.Split(set.Annotations[network.MaskAnnotationKey], ",")
 	// Examine each replica with respect to its ordinal
 	for i := range replicas {
 		// delete and recreate failed pods
@@ -134,12 +129,7 @@ func (ssc *defaultStatefulSetControl) UpdateStatefulSet(set *apps.StatefulSet, p
 		}
 		// If we find a Pod that has not been created we create the Pod immediately and return
 		if !isCreated(replicas[i]) {
-			// Add "ips" and "mask" annotation before creating pods
-			if i < len(ipArr) && i < len(maskArr) {
-				replicas[i].ObjectMeta.Annotations[network.IPAnnotationKey] = ipArr[i]
-				replicas[i].ObjectMeta.Annotations[network.MaskAnnotationKey] = maskArr[i]
-			}
-			glog.Info(i, replicas[i].Name, replicas[i].Annotations)
+			glog.V(6).Infof("Creating a statefulset-pod %v, Annotation: %v", replicas[i].Name, replicas[i].Annotations)
 			return ssc.podControl.CreateStatefulPod(set, replicas[i])
 		}
 		// If we find a Pod that is currently terminating, we must wait until graceful deletion

@@ -42,16 +42,16 @@ type Typer struct {
 }
 
 type Data struct {
-	ResInfo string   `json:"resinfo, omitempty"`
-	IP      string   `json:"ip, omitempty"`
-	Routes  []string `json:"routes, omitempty"`
-	Mask    int      `json:"mask, omitempty"`
+	ResInfo string   `json:"resinfo,omitempty"`
+	IP      string   `json:"ip,omitempty"`
+	Routes  []string `json:"routes,omitempty"`
+	Mask    int      `json:"mask,omitempty"`
 }
 
 type DataToDel struct {
-	NetType NetType `json:"nettype, omitempty"`
-	Startip string  `json:"startip, omitempty"`
-	Mask    int     `json:"mask, omitempty"`
+	NetType NetType `json:"nettype,omitempty"`
+	Startip string  `json:"startip,omitempty"`
+	Mask    int     `json:"mask,omitempty"`
 }
 
 // NWClient defines information needed for the k8s api client
@@ -148,6 +148,7 @@ func (plugin *macvlanNetworkPlugin) GetterIP(netType string) (ipv4 string, mask 
 	return ipv4, mask, nil
 }
 
+// Deprecated: Now IPs are released by controllers.
 func (plugin *macvlanNetworkPlugin) DeleteIP(netType, ipv4 string, mask int) error {
 	glog.Infof("DeleteIP type: %v, ip %v, mask %v", netType, ipv4, mask)
 
@@ -215,11 +216,37 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	if err != nil {
 		return fmt.Errorf("Cannot get netType from: %v", err)
 	}
-	ips := annotations[network.IPAnnotationKey]
+
+	if annotations[network.NetworkKey] == "" || annotations[network.IPAnnotationKey] == "" ||
+		annotations[network.MaskAnnotationKey] == "" {
+		return fmt.Errorf("Not enough annotation of macvlan SetUpPod: %v", annotations)
+	}
 	netdev := strings.Split(annotations[network.NetworkKey], "-")
 	if len(netdev) != 2 {
 		return fmt.Errorf("Cannot get netdev from: %v", annotations)
 	}
+
+	ipsAnno := annotations[network.IPAnnotationKey]
+	ips := strings.Split(ipsAnno, "-")
+	if len(ips) != 2 {
+		return fmt.Errorf("Invalid ips annotation %v", ips)
+	}
+	ipv4 := ips[1]
+	parsedIP := net.ParseIP(ipv4)
+	if parsedIP == nil {
+		return fmt.Errorf("Invalid ip: %s", ipv4)
+	}
+
+	var mask int
+	strMask := strings.Split(annotations[network.MaskAnnotationKey], "-")
+	if len(strMask) != 2 {
+		return fmt.Errorf("Invalid mask annotation %v", annotations[network.MaskAnnotationKey])
+	}
+	mask, err = strconv.Atoi(strMask[1])
+	if err != nil {
+		return fmt.Errorf("Invalid mask annotation %v", annotations[network.MaskAnnotationKey])
+	}
+
 	//we supposed netns link have been made for `ln -s /var/run/docker/netns /var/run` before add this second netType
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
 	netns, err := ns.GetNS(fullnetns)
@@ -227,41 +254,6 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 		return fmt.Errorf("Macvlan failed to open netns %v: %v", netns, err)
 	}
 	defer netns.Close()
-
-	var ipv4 string
-	var mask int
-	if strings.Contains(ips, "none") || strings.Contains(ips, "empty") || ips == "" {
-		ipv4, mask, err = plugin.GetterIP(netdev[1])
-		if err != nil {
-			return fmt.Errorf("failed to get ipv4 from ipam in Getter IP %v", err)
-		}
-		// Add ip to annotation
-		newIps := fmt.Sprintf("%s-%s", netdev[0], ipv4)
-		annotations[network.IPAnnotationKey] = newIps
-		// Remember the mask for releasing ip
-		maskAnnotation := fmt.Sprintf("%s-%d", netdev[0], mask)
-		glog.V(6).Infof("mask: %v", maskAnnotation)
-		annotations[network.MaskAnnotationKey] = maskAnnotation
-	} else {
-		// TODO: reconcile should be done in another function
-		strIPs := strings.Split(ips, "-")
-		if len(strIPs) != 2 {
-			return fmt.Errorf("Invalid ips annotation %v", ips)
-		}
-		ipv4 = strIPs[1]
-		strMask := strings.Split(annotations[network.MaskAnnotationKey], "-")
-		if len(strMask) != 2 {
-			return fmt.Errorf("Invalid mask annotation %v", annotations[network.MaskAnnotationKey])
-		}
-		mask, err = strconv.Atoi(strMask[1])
-		if err != nil {
-			return fmt.Errorf("Invalid mask annotation %v", annotations[network.MaskAnnotationKey])
-		}
-	}
-	parsedIP := net.ParseIP(ipv4)
-	if parsedIP == nil {
-		return fmt.Errorf("Invalid ip: %s", ipv4)
-	}
 
 	err = plugin.cmdAdd(netdev[0], netns, parsedIP, gw, mask, ipv4)
 	if err != nil {
@@ -282,7 +274,6 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 	if err != nil {
 		return fmt.Errorf("Cannot get labels from %v", err)
 	}
-	//we supposed netns link have been made for `ln -s /var/run/docker/netns /var/run` before add this second netdev
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
 	netns, err := ns.GetNS(fullnetns)
 	if err != nil {
@@ -290,17 +281,7 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 		return fmt.Errorf("failed to open netns %q: %v", netns, err)
 	}
 	defer netns.Close()
-	status, err := plugin.GetPodNetworkStatus(namespace, name, id)
-	if err != nil {
-		glog.Errorf("failed to get pod network status during pod teardown %v: %v", status, err)
-		return fmt.Errorf("failed to get pod network status during pod teardown %v: %v", status, err)
-	}
-
-	err = plugin.DeleteIP(netdev[1], status.IP.String(), status.Mask)
-	if err != nil {
-		glog.Errorf("Failed to delete IP from netns %v", err)
-		return fmt.Errorf("Failed to delete IP from netns %v", err)
-	}
+	// IP is released by controllers now.
 	err = cmdDel(netdev[0], fullnetns)
 	if err != nil {
 		glog.Errorf("Failed to delete ifname from netns %v", err)

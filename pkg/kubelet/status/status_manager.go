@@ -28,10 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
-	util "k8s.io/kubernetes/pkg/util/podchanges"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/v1"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
@@ -39,6 +38,7 @@ import (
 	kubepod "k8s.io/kubernetes/pkg/kubelet/pod"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	util "k8s.io/kubernetes/pkg/util/podchanges"
 )
 
 // A wrapper around v1.PodStatus that includes a version to enforce that stale pod statuses are
@@ -448,7 +448,7 @@ func (m *manager) recorderPodEvents(pod *v1.Pod, oldStatus v1.PodStatus, newStat
 
 			if oldStatus.Phase != pod.Status.Phase &&
 				pod.Status.Phase != v1.PodRunning &&
-				pod.Status.Phase != v1.PodPending  {
+				pod.Status.Phase != v1.PodPending {
 				util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", string(pod.Status.Phase))
 			}
 		case "StatefulSet":
@@ -507,6 +507,7 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 			m.recorderPodEvents(pod, tmpPodStatus, pod.Status)
 
 			if !m.podDeletionSafety.OkToDeletePod(pod) {
+				glog.V(6).Infof("Pod not ok to delete: %v/%v", pod.Namespace, pod.Name)
 				return
 			}
 			deleteOptions := metav1.NewDeleteOptions(0)
@@ -523,7 +524,6 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 	// We failed to update status, wait for periodic sync to retry.
 	glog.Warningf("Failed to update status for pod %q: %v", format.Pod(pod), err)
 }
-
 
 func IsContainerStatusDiff(oldStatus *api.PodStatus, newStatus *api.PodStatus) bool {
 	for _, old := range oldStatus.ContainerStatuses {
@@ -543,7 +543,6 @@ func IsContainerStatusDiff(oldStatus *api.PodStatus, newStatus *api.PodStatus) b
 	}
 	return false
 }
-
 
 // needsUpdate returns whether the status is stale for the given pod UID.
 // This method is not thread safe, and most only be accessed by the sync thread.

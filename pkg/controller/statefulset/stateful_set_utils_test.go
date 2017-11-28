@@ -32,6 +32,7 @@ import (
 	podapi "k8s.io/kubernetes/pkg/api/v1/pod"
 	apps "k8s.io/kubernetes/pkg/apis/apps/v1beta1"
 	"k8s.io/kubernetes/pkg/controller"
+	"k8s.io/kubernetes/pkg/kubelet/network"
 )
 
 func TestGetParentNameAndOrdinal(t *testing.T) {
@@ -363,6 +364,45 @@ func newStatefulSetWithVolumes(replicas int, name string, petMounts []v1.VolumeM
 			Template:             template,
 			VolumeClaimTemplates: claims,
 			ServiceName:          "governingsvc",
+		},
+	}
+}
+
+func newStatefulSetWithNetworkGroup(replicas int, name string) *apps.StatefulSet {
+
+	template := v1.PodTemplateSpec{
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name:  "nginx",
+					Image: "nginx",
+				},
+			},
+		},
+	}
+
+	template.Labels = map[string]string{
+		network.NetworkKey:   "bar-InnerNet",
+		network.GroupedLabel: "foo-group",
+	}
+
+	return &apps.StatefulSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "StatefulSet",
+			APIVersion: "apps/v1beta1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: v1.NamespaceDefault,
+			UID:       types.UID("test"),
+		},
+		Spec: apps.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"foo": "bar"},
+			},
+			Replicas:    func() *int32 { i := int32(replicas); return &i }(),
+			Template:    template,
+			ServiceName: "governingsvc",
 		},
 	}
 }

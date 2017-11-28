@@ -328,11 +328,13 @@ func (jm *JobController) syncJob(key string) error {
 	}
 	// if job was finished previously, we don't want to redo the termination
 	if IsJobFinished(&job) {
+		glog.Infof("job %q/%q finished, pod: %v", job.Namespace, job.Name, pods)
 		return nil
 	}
 
 	var manageJobErr error
 	if pastActiveDeadline(&job) {
+		glog.V(6).Infof("Job %v/%v has passed active deadline", job.Namespace, job.Name)
 		// TODO: below code should be replaced with pod termination resulting in
 		// pod failures, rather than killing pods. Unfortunately none such solution
 		// exists ATM. There's an open discussion in the topic in
@@ -442,6 +444,7 @@ func (jm *JobController) syncJob(key string) error {
 		if err := jm.updateHandler(&job); err != nil {
 			return err
 		}
+		// Send events and delete pod if job is finished.
 		if IsJobSuccessed(&job) {
 			podchanges.RecordJobEvent(jm.recorder, job.Name, job.Namespace, "", "JobComplete", "JobComplete")
 		} else if IsJobFailed(&job) {
@@ -535,6 +538,7 @@ func (jm *JobController) manageJob(activePods []*v1.Pod, succeeded int32, job *b
 		for i := int32(0); i < diff; i++ {
 			go func(ix int32) {
 				defer wait.Done()
+				glog.V(6).Infof("Deleting pod %q/%q", job.Namespace, activePods[ix].Name)
 				if err := jm.podControl.DeletePod(job.Namespace, activePods[ix].Name, job); err != nil {
 					defer utilruntime.HandleError(err)
 					// Decrement the expected number of deletes because the informer won't observe this deletion
@@ -580,11 +584,11 @@ func (jm *JobController) manageJob(activePods []*v1.Pod, succeeded int32, job *b
 		var controllerBool = true
 		var blockOwnerDeletion = true
 		controllerRef := &metav1.OwnerReference{
-			APIVersion: "v1",
-			Kind:       "Job",
-			Name:       job.Name,
-			UID:        job.UID,
-			Controller: &controllerBool,
+			APIVersion:         "v1",
+			Kind:               "Job",
+			Name:               job.Name,
+			UID:                job.UID,
+			Controller:         &controllerBool,
 			BlockOwnerDeletion: &blockOwnerDeletion,
 		}
 
@@ -594,6 +598,7 @@ func (jm *JobController) manageJob(activePods []*v1.Pod, succeeded int32, job *b
 		for i := int32(0); i < diff; i++ {
 			go func() {
 				defer wait.Done()
+				glog.V(6).Infof("Creating pod %d, %q/%q ", i, job.Namespace, job.Name)
 				if err := jm.podControl.CreatePodsWithControllerRef(job.Namespace, &job.Spec.Template, job, controllerRef); err != nil {
 					defer utilruntime.HandleError(err)
 					// Decrement the expected number of creates because the informer won't observe this pod
@@ -611,7 +616,7 @@ func (jm *JobController) manageJob(activePods []*v1.Pod, succeeded int32, job *b
 
 	select {
 	case err := <-errCh:
-	// all errors have been reported before, we only need to inform the controller that there was an error and it should re-try this job once more next time.
+		// all errors have been reported before, we only need to inform the controller that there was an error and it should re-try this job once more next time.
 		if err != nil {
 			return active, err
 		}
@@ -650,10 +655,9 @@ func (o byCreationTimestamp) Less(i, j int) bool {
 	return o[i].CreationTimestamp.Before(o[j].CreationTimestamp)
 }
 
-
 func IsJobSuccessed(j *batch.Job) bool {
 	for _, c := range j.Status.Conditions {
-		if (c.Type == batch.JobComplete) {
+		if c.Type == batch.JobComplete {
 			return true
 		}
 	}
@@ -661,8 +665,8 @@ func IsJobSuccessed(j *batch.Job) bool {
 }
 
 func IsJobFailed(j *batch.Job) bool {
-	for _, c := range  j.Status.Conditions {
-		if (c.Type == batch.JobFailed) {
+	for _, c := range j.Status.Conditions {
+		if c.Type == batch.JobFailed {
 			return true
 		}
 	}

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/golang/glog"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	errorutils "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -31,6 +32,8 @@ import (
 	appslisters "k8s.io/kubernetes/pkg/client/listers/apps/v1beta1"
 	corelisters "k8s.io/kubernetes/pkg/client/listers/core/v1"
 	"k8s.io/kubernetes/pkg/client/retry"
+	"k8s.io/kubernetes/pkg/controller"
+	"k8s.io/kubernetes/pkg/kubelet/network"
 	util "k8s.io/kubernetes/pkg/util/podchanges"
 )
 
@@ -82,15 +85,24 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 		spc.recordPodEvent("create", set, pod, err)
 		return err
 	}
+	ip, _, addIPErr := controller.AddIPMaskIfPodLabeled(pod, pod.Namespace)
+	if addIPErr != nil {
+		glog.Errorf("Error add IP for statefulset %v: %v", set.Name, addIPErr)
+	}
+
 	// If we created the PVCs attempt to create the Pod
 	_, err := spc.client.Core().Pods(set.Namespace).Create(pod)
+	if err != nil && ip != "" {
+		releaseErr := controller.ReleaseGroupedIP(pod.ObjectMeta.Labels[network.GroupedLabel], ip)
+		glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
+	}
 	// sink already exists errors
 	if apierrors.IsAlreadyExists(err) {
 		return err
 	}
 	spc.recordPodEvent("create", set, pod, err)
 	// Send events for servicemanager.
-	util.RecordStatefulSetEvent(spc.recorder , set.Name, set.Namespace ,pod.Name, "StatefulSetPodAdd", "StatefulSetPodAdd")
+	util.RecordStatefulSetEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetPodAdd", "StatefulSetPodAdd")
 	return err
 }
 
@@ -150,8 +162,14 @@ func (spc *realStatefulPodControl) UpdateStatefulPod(set *apps.StatefulSet, pod 
 func (spc *realStatefulPodControl) DeleteStatefulPod(set *apps.StatefulSet, pod *v1.Pod) error {
 	err := spc.client.Core().Pods(set.Namespace).Delete(pod.Name, nil)
 	spc.recordPodEvent("delete", set, pod, err)
+	if err == nil {
+		deleteIpErr := controller.ReleaseIPForPod(pod)
+		if deleteIpErr != nil {
+			glog.Errorf("Failed to release %v's IP in DeleteStatefulPod: %v", pod.Name, deleteIpErr)
+		}
+	}
 	// Send events for servicemanager.
-	util.RecordStatefulSetEvent(spc.recorder , set.Name, set.Namespace ,pod.Name, "StatefulSetPodDelete", "StatefulSetPodDelete")
+	util.RecordStatefulSetEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetPodDelete", "StatefulSetPodDelete")
 
 	return err
 }

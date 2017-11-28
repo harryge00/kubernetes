@@ -19,6 +19,7 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,7 +47,12 @@ import (
 	clientretry "k8s.io/kubernetes/pkg/client/retry"
 	util "k8s.io/kubernetes/pkg/util/podchanges"
 
+	"bytes"
 	"github.com/golang/glog"
+	"io/ioutil"
+	"k8s.io/kubernetes/pkg/kubelet/network"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -70,7 +76,11 @@ var UpdateTaintBackoff = wait.Backoff{
 }
 
 var (
-	KeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
+	KeyFunc      = cache.DeletionHandlingMetaNamespaceKeyFunc
+	URLSet       = false
+	baseIPURL    = "http://localhost:8080"
+	getIPURL     = "http://localhost:8080/api/net/ip/occupy"
+	releaseIPURL = "http://localhost:8080/api/net/ip/release"
 )
 
 type ResyncPeriodFunc func() time.Duration
@@ -108,6 +118,188 @@ var ExpKeyFunc = func(obj interface{}) (string, error) {
 		return e.key, nil
 	}
 	return "", fmt.Errorf("Could not find key for obj %#v", obj)
+}
+
+type IpResp struct {
+	Result  IpResult `json:"result,omitempty"`
+	Code    int      `json:"code,omitempty"`
+	Message string   `json:"message,omitempty"`
+}
+
+type IpRequire struct {
+	Group  string `json:"group,omitempty"`
+	UserId int    `json:"userId,omitempty"`
+}
+
+type IpRelease struct {
+	IP    string `json:"ip,omitempty"`
+	Group string `json:"group,omitempty"`
+}
+
+type IpResult struct {
+	IP       string `json:"ip,omitempty"`
+	Mask     int    `json:"mask,omitempty"`
+	Occupied int    `json:"occupied,omitempty"`
+}
+
+type IpReleaseResp struct {
+	Message string `json:"message,omitempty"`
+	Code    int    `json:"code,omitempty"`
+}
+
+func SetIPURL(url string) {
+	baseIPURL = url
+	URLSet = true
+	getIPURL = url + "/api/net/ip/occupy"
+	releaseIPURL = url + "/api/net/ip/release"
+}
+
+func GetIPMaskForPod(reqBytes []byte) (ip string, mask int, err error) {
+	resp, err := http.Post(getIPURL, "application/json", bytes.NewBuffer(reqBytes))
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+	var ipResp IpResp
+	err = json.Unmarshal(body, &ipResp)
+	if err != nil {
+		return
+	}
+	if ipResp.Code != 200 {
+		err = fmt.Errorf("%v", ipResp.Message)
+		return
+	}
+	ip = ipResp.Result.IP
+	mask = ipResp.Result.Mask
+	return
+}
+
+func sendReleaseIpReq(reqBytes []byte) error {
+	resp, err := http.Post(releaseIPURL, "application/json", bytes.NewBuffer(reqBytes))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	var ipResp IpReleaseResp
+	err = json.Unmarshal(body, &ipResp)
+	if err != nil {
+		return err
+	}
+	if ipResp.Code != 200 {
+		err = fmt.Errorf("%v", ipResp.Message)
+	}
+	return err
+}
+
+func ReleaseGroupedIP(group, ip string) error {
+	glog.V(6).Infof("Release ip %v for group: %v", ip, group)
+	req := IpRelease{
+		IP: ip,
+	}
+	if group != "" {
+		req.Group = group
+	}
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	// Retry 3 times in case of network error.
+	for i := 0; i < 3; i++ {
+		err = sendReleaseIpReq(reqBytes)
+		if err == nil {
+			return nil
+		}
+		glog.Errorf("Failed to release ip %v: %v", ip, err)
+		time.Sleep(100 * time.Millisecond)
+	}
+	return err
+}
+
+func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, err error) {
+	// No needs to add ips if no label or "ips" has already been added.
+	if pod.ObjectMeta.Annotations[network.IPAnnotationKey] != "" || pod.ObjectMeta.Labels[network.NetworkKey] == "" {
+		return
+	}
+	nets := strings.Split(pod.ObjectMeta.Labels[network.NetworkKey], "-")
+	if len(nets) != 2 {
+		err = fmt.Errorf("Illegal network label: %v", pod.ObjectMeta.Labels[network.NetworkKey])
+		return
+	}
+	userIds := strings.Split(namespace, "-")
+	if len(userIds) != 2 {
+		err = fmt.Errorf("Wrong Namespace format %v !", pod.Namespace)
+		return
+	}
+	userId := userIds[1]
+	groupLabel := pod.ObjectMeta.Labels[network.GroupedLabel]
+	uid, err := strconv.Atoi(userId)
+	if err != nil {
+		return
+	}
+
+	// TODO: too many ifs
+	if !URLSet {
+		err = fmt.Errorf("Please configure url for getting IPs!")
+		return
+	}
+	req := IpRequire{
+		UserId: uid,
+	}
+	if groupLabel != "" {
+		req.Group = groupLabel
+	}
+	glog.V(6).Infof("Get ip for user: %v, group: %v", req.UserId, req.Group)
+
+	reqBytes, _ := json.Marshal(req)
+
+	// Retry 3 times in case of network error.
+	// TODO: add UUID to ensure idempotence.
+	for i := 0; i < 3; i++ {
+		ip, mask, err = GetIPMaskForPod(reqBytes)
+		if err == nil {
+			break
+		}
+		glog.Errorf("Failed to GetIPMaskForPod %v: %v", pod.Name, err)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if err != nil {
+		return
+	}
+	pod.ObjectMeta.Annotations[network.IPAnnotationKey] = fmt.Sprintf("%s-%s", nets[0], ip)
+	pod.ObjectMeta.Annotations[network.MaskAnnotationKey] = fmt.Sprintf("%s-%d", nets[0], mask)
+	glog.V(6).Infof("Get IP: %v, Mask: %v, ForPod: %v ", ip, mask, pod.ObjectMeta)
+	return
+}
+
+func GetGroupedIpFromPod(pod *v1.Pod) (group, ip string) {
+	group = pod.ObjectMeta.Labels[network.GroupedLabel]
+	if ips := pod.ObjectMeta.Annotations[network.IPAnnotationKey]; ips != "" {
+		ipArr := strings.Split(ips, "-")
+		if len(ipArr) == 2 {
+			ip = ipArr[1]
+		}
+	}
+	return
+}
+
+func ReleaseIPForPod(pod *v1.Pod) error {
+	if URLSet {
+		if group, ip := GetGroupedIpFromPod(pod); ip != "" {
+			glog.Infof("Releasing IP %v for pod %v", ip, pod.ObjectMeta)
+			err := ReleaseGroupedIP(group, ip)
+			return err
+		}
+	}
+	return nil
 }
 
 // ControllerExpectationsInterface is an interface that allows users to set and wait on expectations.
@@ -549,6 +741,12 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 	if err != nil {
 		return err
 	}
+	// Get macvlan IP for grouped pod.
+	ip, _, err := AddIPMaskIfPodLabeled(pod, namespace)
+	if err != nil {
+		glog.Errorf("Failed to add ip and mask for pod %v: %v", pod.Name, err)
+	}
+
 	if len(nodeName) != 0 {
 		pod.Spec.NodeName = nodeName
 	}
@@ -557,6 +755,11 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 	}
 	if newPod, err := r.KubeClient.Core().Pods(namespace).Create(pod); err != nil {
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
+		// Release IP for grouped pod.
+		if ip != "" {
+			releaseErr := ReleaseGroupedIP(pod.ObjectMeta.Labels[network.GroupedLabel], ip)
+			glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
+		}
 		return fmt.Errorf("unable to create pods: %v", err)
 	} else {
 		accessor, err := meta.Accessor(object)
@@ -567,11 +770,11 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		glog.V(4).Infof("Controller %v created pod %v", accessor.GetName(), newPod.Name)
 		switch controllerRef.Kind {
 		case "ReplicationController":
-			util.RecordRCEvent(r.Recorder , controllerRef.Name, newPod.Namespace ,newPod.Name, "RcPodAdd", "RcPodAdd")
+			util.RecordRCEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "RcPodAdd", "RcPodAdd")
 		case "Job":
-			util.RecordJobEvent(r.Recorder , controllerRef.Name, newPod.Namespace ,newPod.Name, "JobPodAdd", "JobPodAdd")
+			util.RecordJobEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "JobPodAdd", "JobPodAdd")
 		case "StatefulSet":
-			util.RecordStatefulSetEvent(r.Recorder , controllerRef.Name, newPod.Namespace ,newPod.Name, "StatefulSetPodAdd", "StatefulSetPodAdd")
+			util.RecordStatefulSetEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "StatefulSetPodAdd", "StatefulSetPodAdd")
 		}
 
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulCreatePodReason, "Created pod: %v", newPod.Name)
@@ -595,13 +798,17 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 		return fmt.Errorf("unable to delete pods: %v", err)
 	} else {
 		if pod != nil && len(pod.OwnerReferences) > 0 {
+			err := ReleaseIPForPod(pod)
+			if err != nil {
+				glog.Errorf("Failed to delete %v's IP: %v", pod.Name, err)
+			}
 			switch pod.OwnerReferences[0].Kind {
 			case "ReplicationController":
-				util.RecordRCEvent(r.Recorder , accessor.GetName(), namespace ,podID, "RcPodDelete", "RcPodDelete")
+				util.RecordRCEvent(r.Recorder, accessor.GetName(), namespace, podID, "RcPodDelete", "RcPodDelete")
 			case "Job":
-				util.RecordJobEvent(r.Recorder , accessor.GetName(), namespace ,podID, "JobPodDelete", "JobPodDelete")
+				util.RecordJobEvent(r.Recorder, accessor.GetName(), namespace, podID, "JobPodDelete", "JobPodDelete")
 			case "StatefulSet":
-				util.RecordStatefulSetEvent(r.Recorder , accessor.GetName(), namespace ,podID, "StatefulSetPodDelete", "StatefulSetPodDelete")
+				util.RecordStatefulSetEvent(r.Recorder, accessor.GetName(), namespace, podID, "StatefulSetPodDelete", "StatefulSetPodDelete")
 			}
 			r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 		}

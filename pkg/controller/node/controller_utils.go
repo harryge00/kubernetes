@@ -91,6 +91,10 @@ func deletePods(kubeClient clientset.Interface, recorder record.EventRecorder, n
 		if err := kubeClient.Core().Pods(pod.Namespace).Delete(pod.Name, nil); err != nil {
 			return false, err
 		}
+		deleteIpErr := controller.ReleaseIPForPod(&pod)
+		if deleteIpErr != nil {
+			glog.Errorf("Failed to release %v's IP in forcefullyDeletePod: %v", pod.Name, deleteIpErr)
+		}
 		remaining = true
 	}
 
@@ -124,6 +128,8 @@ func forcefullyDeletePod(c clientset.Interface, pod *v1.Pod) error {
 	err := c.Core().Pods(pod.Namespace).Delete(pod.Name, &metav1.DeleteOptions{GracePeriodSeconds: &zero})
 	if err == nil {
 		glog.V(4).Infof("forceful deletion of %s succeeded", pod.Name)
+	} else {
+		glog.Errorf("Failed to delete Pod: %v:%v %v", pod.Namespace, pod.Name, err)
 	}
 	return err
 }
