@@ -202,7 +202,7 @@ func sendReleaseIpReq(reqBytes []byte) error {
 func ReleaseGroupedIP(group, ip string) error {
 	glog.V(6).Infof("Release ip %v for group: %v", ip, group)
 	req := IpRelease{
-		IP: ip,
+		IP:    ip,
 	}
 	if group != "" {
 		req.Group = group
@@ -239,11 +239,11 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		return
 	}
 	userId := userIds[1]
-	groupLabel := pod.ObjectMeta.Labels[network.GroupedLabel]
 	uid, err := strconv.Atoi(userId)
 	if err != nil {
 		return
 	}
+	groupLabel := pod.ObjectMeta.Labels[network.GroupedLabel]
 
 	// TODO: too many ifs
 	if !URLSet {
@@ -773,8 +773,6 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 			util.RecordRCEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "RcPodAdd", "RcPodAdd")
 		case "Job":
 			util.RecordJobEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "JobPodAdd", "JobPodAdd")
-		case "StatefulSet":
-			util.RecordStatefulSetEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "StatefulSetPodAdd", "StatefulSetPodAdd")
 		}
 
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulCreatePodReason, "Created pod: %v", newPod.Name)
@@ -807,8 +805,6 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 				util.RecordRCEvent(r.Recorder, accessor.GetName(), namespace, podID, "RcPodDelete", "RcPodDelete")
 			case "Job":
 				util.RecordJobEvent(r.Recorder, accessor.GetName(), namespace, podID, "JobPodDelete", "JobPodDelete")
-			case "StatefulSet":
-				util.RecordStatefulSetEvent(r.Recorder, accessor.GetName(), namespace, podID, "StatefulSetPodDelete", "StatefulSetPodDelete")
 			}
 			r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 		}

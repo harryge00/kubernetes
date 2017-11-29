@@ -102,7 +102,7 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 	}
 	spc.recordPodEvent("create", set, pod, err)
 	// Send events for servicemanager.
-	util.RecordStatefulSetEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetPodAdd", "StatefulSetPodAdd")
+	util.RecordStatefulSetEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodAdd")
 	return err
 }
 
@@ -169,7 +169,7 @@ func (spc *realStatefulPodControl) DeleteStatefulPod(set *apps.StatefulSet, pod 
 		}
 	}
 	// Send events for servicemanager.
-	util.RecordStatefulSetEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetPodDelete", "StatefulSetPodDelete")
+	util.RecordStatefulSetEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodDelete")
 
 	return err
 }
