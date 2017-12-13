@@ -211,11 +211,14 @@ type PersistentVolumeController struct {
 }
 
 type BoundEvent struct {
-	PodName   string `json:"podname,omitempty"`
-	PVC       string `json:"pvc,omitempty"`
-	PV        string `json:"pv,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	Message   string `json:"Message,omitempty"`
+	EventType  string `json:"eventType,omitempty"`
+	PodName    string `json:"podName,omitempty"`
+	PVC        string `json:"pvc,omitempty"`
+	PV         string `json:"pv,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Containers string `json:"containers,omitempty"`
+	UID        string `json:"uid,omitempty"`
 }
 
 // syncClaim is the main controller method to decide what to do with a claim.
@@ -235,10 +238,21 @@ func (ctrl *PersistentVolumeController) syncClaim(claim *v1.PersistentVolumeClai
 }
 
 func (ctrl *PersistentVolumeController) sendBoundEvent(claim *v1.PersistentVolumeClaim, volume *v1.PersistentVolume, msg string) {
+	// Since the warning message keeps producing, we will ignore old messages
+	if msg != "" {
+		expiredTime := time.Now().Add(-30 * time.Second)
+		createTime := claim.CreationTimestamp.Time
+		if createTime.Before(expiredTime) {
+			return
+		}
+	}
 	event := BoundEvent{
-		PVC:       claim.Name,
-		Namespace: claim.Namespace,
-		PodName:   claim.ObjectMeta.Labels["podname"],
+		EventType:  "PvUpdate",
+		PVC:        claim.Name,
+		Namespace:  claim.Namespace,
+		PodName:    claim.Annotations["podName"],
+		Containers: claim.Annotations["containers"],
+		UID:        string(claim.UID),
 	}
 	if volume != nil {
 		event.PV = volume.Name
@@ -246,9 +260,8 @@ func (ctrl *PersistentVolumeController) sendBoundEvent(claim *v1.PersistentVolum
 	if msg != "" {
 		event.Message = msg
 	}
-
 	message, _ := json.Marshal(event)
-
+	glog.Info(string(message))
 	ctrl.eventRecorder.Event(claim, v1.EventTypeNormal, "PvUpdate", string(message))
 }
 

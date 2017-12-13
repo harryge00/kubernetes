@@ -27,6 +27,7 @@ import (
 	apps "k8s.io/kubernetes/pkg/apis/apps/v1beta1"
 	"k8s.io/kubernetes/pkg/controller"
 
+	"bytes"
 	"github.com/golang/glog"
 )
 
@@ -138,17 +139,54 @@ func storageMatches(set *apps.StatefulSet, pod *v1.Pod) bool {
 // getPersistentVolumeClaims gets a map of PersistentVolumeClaims to their template names, as defined in set. The
 // returned PersistentVolumeClaims are each constructed with a the name specific to the Pod. This name is determined
 // by getPersistentVolumeClaimName.
+// Haoyuan: add the containers' name to PVCs' labels
 func getPersistentVolumeClaims(set *apps.StatefulSet, pod *v1.Pod) map[string]v1.PersistentVolumeClaim {
 	ordinal := getOrdinal(pod)
 	templates := set.Spec.VolumeClaimTemplates
 	claims := make(map[string]v1.PersistentVolumeClaim, len(templates))
+
+	// claimContainers like:
+	//	{pvc1: {nginx: true, tomcat:true, java:true}}
+	// we need to convert keys from the map into an annotation of the pvc
+	claimContainers := make(map[string]map[string]bool)
+	// Add containers to labels so we can know the relationship between PVC and containers
+	for _, container := range pod.Spec.Containers {
+		for _, vol := range container.VolumeMounts {
+			if _, exists := claimContainers[vol.Name]; !exists {
+				claimContainers[vol.Name] = make(map[string]bool)
+			}
+			claimContainers[vol.Name][container.Name] = true
+		}
+	}
+
+	var buffer bytes.Buffer
 	for i := range templates {
 		claim := templates[i]
 		claim.Name = getPersistentVolumeClaimName(set, &claim, ordinal)
 		claim.Namespace = set.Namespace
 		claim.Labels = set.Spec.Selector.MatchLabels
+
+		// Make all containers to string separated by ";"
+		firstFlag := true
+		for containerName := range claimContainers[templates[i].Name] {
+			if !firstFlag {
+				buffer.WriteString(";")
+			} else {
+				firstFlag = false
+			}
+			buffer.WriteString(containerName)
+		}
+		if claim.Annotations == nil {
+			claim.Annotations = make(map[string]string)
+		}
+		claim.Annotations["containers"] = buffer.String()
+		// Add pod name to annotations so events can use.
+		claim.Annotations["podName"] = pod.Name
+		buffer.Reset()
+
 		claims[templates[i].Name] = claim
 	}
+
 	return claims
 }
 

@@ -283,7 +283,6 @@ func (ssc *StatefulSetController) getPodsForStatefulSet(set *apps.StatefulSet, s
 	if err != nil {
 		return nil, err
 	}
-
 	filter := func(pod *v1.Pod) bool {
 		// Only claim if it matches our StatefulSet name. Otherwise release/ignore.
 		return isMemberOf(set, pod)
@@ -419,7 +418,7 @@ func (ssc *StatefulSetController) sync(key string) error {
 func (ssc *StatefulSetController) syncStatefulSet(set *apps.StatefulSet, pods []*v1.Pod) error {
 	glog.V(2).Infof("Syncing StatefulSet %v/%v with %d pods", set.Namespace, set.Name, len(pods))
 	if err := ssc.control.UpdateStatefulSet(set, pods); err != nil {
-		glog.V(2).Infof("Error syncing StatefulSet %s/%s with %d pods : %s", set.Namespace, set.Name, err)
+		glog.V(2).Infof("Error syncing StatefulSet %v/%v: %v", set.Namespace, set.Name, err)
 		return err
 	}
 	glog.V(2).Infof("Succesfully synced StatefulSet %s/%s successful", set.Namespace, set.Name)
