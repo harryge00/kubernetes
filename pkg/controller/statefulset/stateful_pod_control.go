@@ -93,7 +93,7 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 	// If we created the PVCs attempt to create the Pod
 	_, err := spc.client.Core().Pods(set.Namespace).Create(pod)
 	if err != nil && ip != "" {
-		releaseErr := controller.ReleaseGroupedIP(pod.ObjectMeta.Labels[network.GroupedLabel], ip)
+		releaseErr := controller.ReleaseGroupedIP(pod.Namespace, pod.ObjectMeta.Labels[network.GroupedLabel], ip)
 		glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
 	}
 	// sink already exists errors
