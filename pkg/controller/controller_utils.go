@@ -81,6 +81,7 @@ var (
 	baseIPURL    = "http://localhost:8080"
 	getIPURL     = "http://localhost:8080/api/net/ip/occupy"
 	releaseIPURL = "http://localhost:8080/api/net/ip/release"
+	ipLocation   = "1199"
 )
 
 type ResyncPeriodFunc func() time.Duration
@@ -127,9 +128,10 @@ type IpResp struct {
 }
 
 type IpRequire struct {
-	Group   string `json:"group,omitempty"`
-	UserId  int    `json:"userId,omitempty"`
-	NetType int    `json:"type,omitempty"`
+	Group    string `json:"group,omitempty"`
+	UserId   int    `json:"userId,omitempty"`
+	NetType  int    `json:"type,omitempty"`
+	Location string `json:"location,omitempty"`
 }
 
 type IpRelease struct {
@@ -150,11 +152,12 @@ type IpReleaseResp struct {
 	Code    int    `json:"code,omitempty"`
 }
 
-func SetIPURL(url string) {
+func SetIPURL(url, location string) {
 	baseIPURL = url
 	URLSet = true
 	getIPURL = url + "/api/net/ip/occupy"
 	releaseIPURL = url + "/api/net/ip/release"
+	ipLocation = location
 }
 
 func GetIPMaskForPod(reqBytes []byte) (ip, location string, mask int, httpCode int, err error) {
@@ -207,22 +210,25 @@ func sendReleaseIpReq(reqBytes []byte) (code int, err error) {
 
 func ReleaseGroupedIP(namespace, group, ip string) error {
 	glog.V(6).Infof("ReleaseIP %v ip %v for group: %v", namespace, ip, group)
-	arr := strings.Split(namespace, "-")
-	if len(arr) != 2 {
-		return fmt.Errorf("Illegel namespace %v", namespace)
+	userIds := strings.Split(namespace, "-")
+	lenIds := len(userIds)
+	if lenIds <= 1 {
+		err := fmt.Errorf("Wrong Namespace format %v !", namespace)
+		return err
 	}
-	userIdStr := arr[1]
-	userId, err := strconv.Atoi(userIdStr)
+	userId := userIds[lenIds-1]
+	uid, err := strconv.Atoi(userId)
 	if err != nil {
 		return err
 	}
 	req := IpRelease{
 		IP:     ip,
-		UserId: userId,
+		UserId: uid,
 	}
 	if group != "" {
 		req.Group = group
 	}
+	glog.V(6).Infof("ReleaseIPReq: %v", req)
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
 		return err
@@ -253,11 +259,12 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		return
 	}
 	userIds := strings.Split(namespace, "-")
-	if len(userIds) != 2 {
+	lenIds := len(userIds)
+	if lenIds <= 1 {
 		err = fmt.Errorf("Wrong Namespace format %v !", pod.Namespace)
 		return
 	}
-	userId := userIds[1]
+	userId := userIds[lenIds-1]
 	uid, err := strconv.Atoi(userId)
 	if err != nil {
 		return
@@ -270,14 +277,15 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		return
 	}
 	req := IpRequire{
-		UserId: uid,
+		UserId:   uid,
+		Location: ipLocation,
 	}
 	if groupLabel != "" {
 		req.Group = groupLabel
 	}
 	switch nets[1] {
 	case "InnerNet":
-		req.NetType = 2
+		req.NetType = 1 // Production environment: 1, Debug env: 2
 	case "OuterNet":
 		req.NetType = 3
 	}
@@ -330,7 +338,7 @@ func GetGroupedIpFromPod(pod *v1.Pod) (group, ip string) {
 
 func ReleaseIPForPod(pod *v1.Pod) error {
 	if URLSet {
-		if group, ip := GetGroupedIpFromPod(pod); ip != "" {
+		if group, ip := GetGroupedIpFromPod(pod); ip != "" && ip != "none" && ip != "empty" {
 			glog.Infof("Releasing IP %v for pod %v", ip, pod.ObjectMeta)
 			err := ReleaseGroupedIP(pod.Namespace, group, ip)
 			return err

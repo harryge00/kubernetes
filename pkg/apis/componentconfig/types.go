@@ -833,6 +833,7 @@ type KubeControllerManagerConfiguration struct {
 	HorizontalPodAutoscalerUseRESTClients bool
 	// Address where controllers require/release IPs
 	IPAllocatorURL string
+	IPLocation     string
 }
 
 // VolumeConfiguration contains *all* enumerated flags meant to configure all volume

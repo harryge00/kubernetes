@@ -107,6 +107,7 @@ func NewCMServer() *CMServer {
 			EnableTaintManager:                    true,
 			HorizontalPodAutoscalerUseRESTClients: false,
 			IPAllocatorURL:                        "http://localhost:8080",
+			IPLocation:                            "1199",
 		},
 	}
 	s.LeaderElection.LeaderElect = true
@@ -209,6 +210,7 @@ func (s *CMServer) AddFlags(fs *pflag.FlagSet, allControllers []string, disabled
 	fs.BoolVar(&s.EnableTaintManager, "enable-taint-manager", s.EnableTaintManager, "WARNING: Beta feature. If set to true enables NoExecute Taints and will evict all not-tolerating Pod running on Nodes tainted with this kind of Taints.")
 	fs.BoolVar(&s.HorizontalPodAutoscalerUseRESTClients, "horizontal-pod-autoscaler-use-rest-clients", s.HorizontalPodAutoscalerUseRESTClients, "WARNING: alpha feature.  If set to true, causes the horizontal pod autoscaler controller to use REST clients through the kube-aggregator, instead of using the legacy metrics client through the API server proxy.  This is required for custom metrics support in the horizonal pod autoscaler.")
 	fs.StringVar(&s.IPAllocatorURL, "ip-allocator-url", s.IPAllocatorURL, "Address where controllers require/release IPs")
+	fs.StringVar(&s.IPLocation, "ip-location", s.IPLocation, "Location of macvlan ip")
 	leaderelection.BindFlags(&s.LeaderElection, fs)
 
 	utilfeature.DefaultFeatureGate.AddFlag(fs)
