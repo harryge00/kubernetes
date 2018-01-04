@@ -81,6 +81,7 @@ var (
 	baseIPURL    = "http://localhost:8080"
 	getIPURL     = "http://localhost:8080/api/net/ip/occupy"
 	releaseIPURL = "http://localhost:8080/api/net/ip/release"
+	ipLocation   = "1199"
 )
 
 type ResyncPeriodFunc func() time.Duration
@@ -127,19 +128,23 @@ type IpResp struct {
 }
 
 type IpRequire struct {
-	Group  string `json:"group,omitempty"`
-	UserId int    `json:"userId,omitempty"`
+	Group    string `json:"group,omitempty"`
+	UserId   int    `json:"userId,omitempty"`
+	NetType  int    `json:"type,omitempty"`
+	Location string `json:"location,omitempty"`
 }
 
 type IpRelease struct {
-	IP    string `json:"ip,omitempty"`
-	Group string `json:"group,omitempty"`
+	IP     string `json:"ip,omitempty"`
+	Group  string `json:"group,omitempty"`
+	UserId int    `json:"userId,omitempty"`
 }
 
 type IpResult struct {
 	IP       string `json:"ip,omitempty"`
 	Mask     int    `json:"mask,omitempty"`
 	Occupied int    `json:"occupied,omitempty"`
+	Location string `json:"location,omitempty"`
 }
 
 type IpReleaseResp struct {
@@ -147,14 +152,15 @@ type IpReleaseResp struct {
 	Code    int    `json:"code,omitempty"`
 }
 
-func SetIPURL(url string) {
+func SetIPURL(url, location string) {
 	baseIPURL = url
 	URLSet = true
 	getIPURL = url + "/api/net/ip/occupy"
 	releaseIPURL = url + "/api/net/ip/release"
+	ipLocation = location
 }
 
-func GetIPMaskForPod(reqBytes []byte) (ip string, mask int, err error) {
+func GetIPMaskForPod(reqBytes []byte) (ip, location string, mask int, httpCode int, err error) {
 	resp, err := http.Post(getIPURL, "application/json", bytes.NewBuffer(reqBytes))
 	if err != nil {
 		return
@@ -169,55 +175,74 @@ func GetIPMaskForPod(reqBytes []byte) (ip string, mask int, err error) {
 	if err != nil {
 		return
 	}
-	if ipResp.Code != 200 {
+	httpCode = ipResp.Code
+	if httpCode != 200 {
 		err = fmt.Errorf("%v", ipResp.Message)
 		return
 	}
 	ip = ipResp.Result.IP
 	mask = ipResp.Result.Mask
+	location = ipResp.Result.Location
 	return
 }
 
-func sendReleaseIpReq(reqBytes []byte) error {
+func sendReleaseIpReq(reqBytes []byte) (code int, err error) {
 	resp, err := http.Post(releaseIPURL, "application/json", bytes.NewBuffer(reqBytes))
 	if err != nil {
-		return err
+		return
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return
 	}
 	var ipResp IpReleaseResp
 	err = json.Unmarshal(body, &ipResp)
 	if err != nil {
-		return err
+		return
 	}
-	if ipResp.Code != 200 {
+	code = ipResp.Code
+	if code != 200 {
 		err = fmt.Errorf("%v", ipResp.Message)
 	}
-	return err
+	return
 }
 
-func ReleaseGroupedIP(group, ip string) error {
-	glog.V(6).Infof("Release ip %v for group: %v", ip, group)
+func ReleaseGroupedIP(namespace, group, ip string) error {
+	glog.V(6).Infof("ReleaseIP %v ip %v for group: %v", namespace, ip, group)
+	userIds := strings.Split(namespace, "-")
+	lenIds := len(userIds)
+	if lenIds <= 1 {
+		err := fmt.Errorf("Wrong Namespace format %v !", namespace)
+		return err
+	}
+	userId := userIds[lenIds-1]
+	uid, err := strconv.Atoi(userId)
+	if err != nil {
+		return err
+	}
 	req := IpRelease{
-		IP:    ip,
+		IP:     ip,
+		UserId: uid,
 	}
 	if group != "" {
 		req.Group = group
 	}
+	glog.V(6).Infof("ReleaseIPReq: %v", req)
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}
 	// Retry 3 times in case of network error.
 	for i := 0; i < 3; i++ {
-		err = sendReleaseIpReq(reqBytes)
+		code, err := sendReleaseIpReq(reqBytes)
 		if err == nil {
 			return nil
 		}
 		glog.Errorf("Failed to release ip %v: %v", ip, err)
+		if code != 0 {
+			return err
+		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	return err
@@ -234,11 +259,12 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		return
 	}
 	userIds := strings.Split(namespace, "-")
-	if len(userIds) != 2 {
+	lenIds := len(userIds)
+	if lenIds <= 1 {
 		err = fmt.Errorf("Wrong Namespace format %v !", pod.Namespace)
 		return
 	}
-	userId := userIds[1]
+	userId := userIds[lenIds-1]
 	uid, err := strconv.Atoi(userId)
 	if err != nil {
 		return
@@ -251,31 +277,50 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		return
 	}
 	req := IpRequire{
-		UserId: uid,
+		UserId:   uid,
+		Location: ipLocation,
 	}
 	if groupLabel != "" {
 		req.Group = groupLabel
 	}
-	glog.V(6).Infof("Get ip for user: %v, group: %v", req.UserId, req.Group)
+	switch nets[1] {
+	case "InnerNet":
+		req.NetType = 1 // Production environment: 1, Debug env: 2
+	case "OuterNet":
+		req.NetType = 3
+	}
+	glog.V(6).Infof("Get IP req: %v", req)
 
 	reqBytes, _ := json.Marshal(req)
 
+	var code int
+	var location string
 	// Retry 3 times in case of network error.
 	// TODO: add UUID to ensure idempotence.
 	for i := 0; i < 3; i++ {
-		ip, mask, err = GetIPMaskForPod(reqBytes)
-		if err == nil {
+		ip, location, mask, code, err = GetIPMaskForPod(reqBytes)
+		// code = 0 means connection error
+		if err != nil {
+			glog.Errorf("Failed to GetIPMaskForPod %v: %v.  Req: %v", pod.Name, err, req)
+			// If code is 0, network fails so retry.
+			if code != 0 {
+				return
+			}
+		} else {
 			break
 		}
-		glog.Errorf("Failed to GetIPMaskForPod %v: %v", pod.Name, err)
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	if err != nil {
-		return
-	}
 	pod.ObjectMeta.Annotations[network.IPAnnotationKey] = fmt.Sprintf("%s-%s", nets[0], ip)
 	pod.ObjectMeta.Annotations[network.MaskAnnotationKey] = fmt.Sprintf("%s-%d", nets[0], mask)
+	if location != "" {
+		pod.ObjectMeta.Annotations["location"] = location
+		if pod.Spec.NodeSelector == nil {
+			pod.Spec.NodeSelector = make(map[string]string)
+		}
+		pod.Spec.NodeSelector["location"] = location
+	}
 	glog.V(6).Infof("Get IP: %v, Mask: %v, ForPod: %v ", ip, mask, pod.ObjectMeta)
 	return
 }
@@ -293,9 +338,9 @@ func GetGroupedIpFromPod(pod *v1.Pod) (group, ip string) {
 
 func ReleaseIPForPod(pod *v1.Pod) error {
 	if URLSet {
-		if group, ip := GetGroupedIpFromPod(pod); ip != "" {
+		if group, ip := GetGroupedIpFromPod(pod); ip != "" && ip != "none" && ip != "empty" {
 			glog.Infof("Releasing IP %v for pod %v", ip, pod.ObjectMeta)
-			err := ReleaseGroupedIP(group, ip)
+			err := ReleaseGroupedIP(pod.Namespace, group, ip)
 			return err
 		}
 	}
@@ -757,7 +802,7 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
 		// Release IP for grouped pod.
 		if ip != "" {
-			releaseErr := ReleaseGroupedIP(pod.ObjectMeta.Labels[network.GroupedLabel], ip)
+			releaseErr := ReleaseGroupedIP(pod.Namespace, pod.ObjectMeta.Labels[network.GroupedLabel], ip)
 			glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
 		}
 		return fmt.Errorf("unable to create pods: %v", err)
