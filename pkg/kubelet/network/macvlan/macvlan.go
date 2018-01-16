@@ -73,6 +73,10 @@ type macvlanNetworkPlugin struct {
 	mask        int
 	dclient     *dockerclient.Client
 	err         error
+	ip1181      net.IP
+	mask1181    int
+	ip1199      net.IP
+	mask1199    int
 }
 
 func ProbeNetworkPlugins() []network.NetworkPlugin {
@@ -104,6 +108,10 @@ func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componen
 		glog.Errorf("Macvlan failed to connect to docker at local host %v", plugin.err)
 	}
 
+	plugin.ip1181 = net.ParseIP("10.30.96.0")
+	plugin.mask1181 = 21
+	plugin.ip1199 = net.ParseIP("172.25.0.0")
+	plugin.mask1199 = 16
 	return nil
 }
 
@@ -455,6 +463,40 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 		})
 		if err != nil {
 			glog.Errorf("Peiqi Macvlan failed to add ethernet route rules: %v", err)
+		}
+		// 10.30.99.* is from 1181
+		// Add route to 1199 (172.25.*.*)
+		if strings.HasPrefix(ipv4str, "10.30.99") {
+			dst1199 := &net.IPNet{
+				IP:   plugin.ip1199,
+				Mask: net.CIDRMask(plugin.mask1199, 32),
+			}
+			glog.V(6).Infof("RouteAdd 1199 %v", dst1199.String())
+			err = netlink.RouteAdd(&netlink.Route{
+				LinkIndex: iface.Attrs().Index,
+				Scope:     netlink.SCOPE_UNIVERSE,
+				Dst:       dst1199,
+			})
+			if err != nil {
+				glog.Errorf("Macvlan failed to add 1199 route rules: %v", err)
+			}
+		} else if strings.HasPrefix(ipv4str, "172.25.12") {
+			// 172.25.12.* is from 1199
+			// Add route to 1181 (10.30.99.*)
+
+			dst1181 := &net.IPNet{
+				IP:   plugin.ip1181,
+				Mask: net.CIDRMask(plugin.mask1181, 32),
+			}
+			glog.V(6).Infof("RouteAdd 1181 %v", dst1181.String())
+			err = netlink.RouteAdd(&netlink.Route{
+				LinkIndex: iface.Attrs().Index,
+				Scope:     netlink.SCOPE_UNIVERSE,
+				Dst:       dst1181,
+			})
+			if err != nil {
+				glog.Errorf("Macvlan failed to add 1181 route rules: %v", err)
+			}
 		}
 
 		contMacvlan, err := netlink.LinkByName(ifName)
