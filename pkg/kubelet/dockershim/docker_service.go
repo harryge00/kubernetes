@@ -229,6 +229,9 @@ func NewDockerService(config *ClientConfig, podSandboxImage string, streamingCon
 		return nil, fmt.Errorf("didn't find compatible CNI plugin with given settings %+v: %v", pluginSettings, err)
 	}
 	ds.network = network.NewPluginManager(plug)
+
+	ds.macvlanNetwork = network.NewPluginManager(plug)
+
 	glog.Infof("Docker cri networking managed by %v", plug.Name())
 
 	// NOTE: cgroup driver is only detectable in docker 1.11+
@@ -289,6 +292,8 @@ type dockerService struct {
 	streamingServer  streaming.Server
 
 	network *network.PluginManager
+
+	macvlanNetwork *network.PluginManager
 	// Map of podSandboxID :: network-is-ready
 	networkReady     map[string]bool
 	networkReadyLock sync.Mutex
