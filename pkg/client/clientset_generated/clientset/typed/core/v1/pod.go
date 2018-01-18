@@ -124,11 +124,11 @@ func (c *pods) Delete(name string, options *meta_v1.DeleteOptions) error {
 		if len(pod.OwnerReferences) > 0 {
 			ref := pod.OwnerReferences[0]
 			if ref.Kind == "ReplicationController" {
-				c.RecordRCEvent(ref.Name, pod.Namespace ,pod.Name, "RcUpdate", "RcPodDelete")
+				go c.RecordRCEvent(ref.Name, pod.Namespace ,pod.Name, "RcUpdate", "RcPodDelete")
 			}
 
 			if ref.Kind == "Job" {
-				c.RecordJobEvent(ref.Name, pod.Namespace ,pod.Name, "JobUpdate", "JobPodDelete")
+				go c.RecordJobEvent(ref.Name, pod.Namespace ,pod.Name, "JobUpdate", "JobPodDelete")
 			}
 		}
 	}
@@ -151,11 +151,11 @@ func (c *pods) DeleteCollection(options *meta_v1.DeleteOptions, listOptions meta
 			if len(pod.OwnerReferences) > 0 {
 				ref := pod.OwnerReferences[0]
 				if ref.Kind == "ReplicationController" {
-					c.RecordRCEvent(ref.Name, pod.Namespace ,pod.Name, "RcUpdate", "RcPodDelete")
+					go c.RecordRCEvent(ref.Name, pod.Namespace ,pod.Name, "RcUpdate", "RcPodDelete")
 				}
 
 				if ref.Kind == "Job" {
-					c.RecordJobEvent(ref.Name, pod.Namespace ,pod.Name, "JobUpdate", "JobPodDelete")
+					go c.RecordJobEvent(ref.Name, pod.Namespace ,pod.Name, "JobUpdate", "JobPodDelete")
 				}
 			}
 		}

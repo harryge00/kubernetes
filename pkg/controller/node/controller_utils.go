@@ -87,13 +87,15 @@ func deletePods(kubeClient clientset.Interface, recorder record.EventRecorder, n
 		}
 
 		glog.V(2).Infof("Starting deletion of pod %v/%v", pod.Namespace, pod.Name)
-		recorder.Eventf(&pod, v1.EventTypeNormal, "NodeControllerEviction", "Marking for deletion Pod %s from Node %s", pod.Name, nodeName)
-		if err := kubeClient.Core().Pods(pod.Namespace).Delete(pod.Name, nil); err != nil {
-			return false, err
-		}
+		// It is safe to releaseIP here. Because new pods will not be created unless old pods are deleted.
+		// So even if we release the same IP multiple times, it is ok.
 		deleteIpErr := controller.ReleaseIPForPod(&pod)
 		if deleteIpErr != nil {
 			glog.Errorf("Failed to release %v's IP in forcefullyDeletePod: %v", pod.Name, deleteIpErr)
+		}
+		recorder.Eventf(&pod, v1.EventTypeNormal, "NodeControllerEviction", "Marking for deletion Pod %s from Node %s", pod.Name, nodeName)
+		if err := kubeClient.Core().Pods(pod.Namespace).Delete(pod.Name, nil); err != nil {
+			return false, err
 		}
 		remaining = true
 	}

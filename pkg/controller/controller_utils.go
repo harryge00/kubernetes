@@ -245,6 +245,7 @@ func ReleaseGroupedIP(namespace, group, ip string) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	glog.V(6).Infof("IP %v successfully released.", ip)
 	return err
 }
 
@@ -289,7 +290,7 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 	case "OuterNet":
 		req.NetType = 3
 	}
-	glog.V(6).Infof("Get IP req: %v", req)
+	glog.V(6).Infof("%v Get IP Req: %v", pod.GenerateName, req)
 
 	reqBytes, _ := json.Marshal(req)
 
