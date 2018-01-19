@@ -42,6 +42,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/network/cni"
 	"k8s.io/kubernetes/pkg/kubelet/network/hostport"
 	"k8s.io/kubernetes/pkg/kubelet/network/kubenet"
+	"k8s.io/kubernetes/pkg/kubelet/network/macvlan"
 	"k8s.io/kubernetes/pkg/kubelet/server/streaming"
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	utilstore "k8s.io/kubernetes/pkg/kubelet/util/store"
@@ -230,7 +231,8 @@ func NewDockerService(config *ClientConfig, podSandboxImage string, streamingCon
 	}
 	ds.network = network.NewPluginManager(plug)
 
-	ds.macvlanNetwork = network.NewPluginManager(plug)
+	macvlanPlug := macvlan.NewPlugin(&ds.client, netHost, "eth0", "bridge", pluginSettings.MTU)
+	ds.macvlanNetwork = network.NewPluginManager(macvlanPlug)
 
 	glog.Infof("Docker cri networking managed by %v", plug.Name())
 
