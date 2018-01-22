@@ -22,7 +22,6 @@ import (
 
 const (
 	gw          = "66.1.1.254"
-	defaultMask = 16
 	macPrefix   = "02:42"
 )
 
@@ -51,16 +50,13 @@ type DataToDel struct {
 }
 
 type macvlanNetworkPlugin struct {
-	Mutex *sync.Mutex
 	network.NoopNetworkPlugin
 	netconf     NetConf
 	macvlanName string
 	host        network.Host
 	netdev      string
 	typer       string
-	ipamclient  NWClient
 	ipv4        string
-	mask        int
 	dclient     *libdocker.Interface
 	err         error
 	ip1181      net.IP
@@ -74,7 +70,6 @@ func NewPlugin(client *libdocker.Interface, host network.Host, netcardName strin
 	plugin := &macvlanNetworkPlugin{
 		macvlanName: "macvlan",
 		dclient: client,
-		Mutex: &sync.Mutex{},
 		host: host,
 	}
 	plugin.netconf = NetConf{
@@ -82,12 +77,8 @@ func NewPlugin(client *libdocker.Interface, host network.Host, netcardName strin
 		MTU:    mtu,
 		MacvlanMode:   mode,
 	}
-	//plugin.ipamclient = NWClient{
-	//	baseURL: addr,
-	//	client:  &http.Client{},
-	//}
+
 	// TODO: move default mask to config
-	plugin.mask = defaultMask
 	plugin.ip1181 = net.ParseIP("10.30.96.0")
 	plugin.mask1181 = 21
 	plugin.ip1199 = net.ParseIP("172.25.0.0")
@@ -112,18 +103,12 @@ func getNetCardAndType(labels map[string]string) (error, []string) {
 }
 
 func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID, annotations map[string]string) error {
-	glog.V(6).Infof("SetUpPod %v/%v", namespace, name)
-	containerinfo, err := (*plugin.dclient).InspectContainer(id.ID)
-	if err != nil {
-		glog.Errorf("Macvlan failed to get container struct info %v", err)
-		return err
-	}
-
 	if annotations[network.NetworkKey] == "" || annotations[network.IPAnnotationKey] == "" ||
 		annotations[network.MaskAnnotationKey] == "" {
 		glog.V(6).Info("Not enough annotation of macvlan SetUpPod: %v", annotations)
 		return nil
 	}
+
 	netdev := strings.Split(annotations[network.NetworkKey], "-")
 	if len(netdev) != 2 {
 		return fmt.Errorf("Cannot get netdev from: %v", annotations)
@@ -145,11 +130,17 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	if len(strMask) != 2 {
 		return fmt.Errorf("Invalid mask annotation %v", annotations[network.MaskAnnotationKey])
 	}
-	mask, err = strconv.Atoi(strMask[1])
+	mask, err := strconv.Atoi(strMask[1])
 	if err != nil {
 		return fmt.Errorf("Invalid mask annotation %v", annotations[network.MaskAnnotationKey])
 	}
 
+	glog.V(6).Infof("SetUpPod %v/%v", namespace, name)
+	containerinfo, err := (*plugin.dclient).InspectContainer(id.ID)
+	if err != nil {
+		glog.Errorf("Macvlan failed to get container struct info %v", err)
+		return err
+	}
 	//we supposed netns link have been made for `ln -s /var/run/docker/netns /var/run` before add this second netType
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
 	netns, err := ns.GetNS(fullnetns)
