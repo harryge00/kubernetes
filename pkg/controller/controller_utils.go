@@ -49,6 +49,7 @@ import (
 	taintutils "k8s.io/kubernetes/pkg/util/taints"
 
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/kubelet/network"
 )
 
 const (
@@ -567,8 +568,19 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 	if labels.Set(pod.Labels).AsSelectorPreValidated().Empty() {
 		return fmt.Errorf("unable to create pods, no labels")
 	}
+
+	// Get macvlan IP for grouped pod.
+	ip, _, err := AddIPMaskIfPodLabeled(pod, namespace)
+	if err != nil {
+		glog.Errorf("Failed to add ip and mask for pod %v: %v", pod.Name, err)
+	}
 	if newPod, err := r.KubeClient.CoreV1().Pods(namespace).Create(pod); err != nil {
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
+		// Release IP for grouped pod.
+		if ip != "" {
+			releaseErr := ReleaseGroupedIP(pod.Namespace, pod.ObjectMeta.Labels[network.GroupedLabel], ip)
+			glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
+		}
 		return err
 	} else {
 		accessor, err := meta.Accessor(object)
