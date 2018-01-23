@@ -17,7 +17,6 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	"k8s.io/utils/exec"
 	"strconv"
-	"sync"
 )
 
 const (
