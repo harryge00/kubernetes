@@ -17,7 +17,15 @@ import (
 	"strconv"
 	"time"
 
-	"k8s.io/kubernetes/pkg/kubelet/network"
+)
+
+// The consts below are Used for macvlan plugin
+const (
+	MaskAnnotationKey = "mask"
+	IPAnnotationKey   = "ips"
+	NetworkKey        = "network"
+	// Label for network groups
+	GroupedLabel = "networkgroup"
 )
 
 var (
@@ -156,12 +164,12 @@ func ReleaseGroupedIP(namespace, group, ip string) error {
 
 func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, err error) {
 	// No needs to add ips if no label or "ips" has already been added.
-	if pod.ObjectMeta.Annotations[network.IPAnnotationKey] != "" || pod.ObjectMeta.Labels[network.NetworkKey] == "" {
+	if pod.ObjectMeta.Annotations[IPAnnotationKey] != "" || pod.ObjectMeta.Labels[NetworkKey] == "" {
 		return
 	}
-	nets := strings.Split(pod.ObjectMeta.Labels[network.NetworkKey], "-")
+	nets := strings.Split(pod.ObjectMeta.Labels[NetworkKey], "-")
 	if len(nets) != 2 {
-		err = fmt.Errorf("Illegal network label: %v", pod.ObjectMeta.Labels[network.NetworkKey])
+		err = fmt.Errorf("Illegal network label: %v", pod.ObjectMeta.Labels[NetworkKey])
 		return
 	}
 	userIds := strings.Split(namespace, "-")
@@ -175,7 +183,7 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 	if err != nil {
 		return
 	}
-	groupLabel := pod.ObjectMeta.Labels[network.GroupedLabel]
+	groupLabel := pod.ObjectMeta.Labels[GroupedLabel]
 
 	// TODO: too many ifs
 	if !URLSet {
@@ -218,8 +226,10 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	pod.ObjectMeta.Annotations[network.IPAnnotationKey] = fmt.Sprintf("%s-%s", nets[0], ip)
-	pod.ObjectMeta.Annotations[network.MaskAnnotationKey] = fmt.Sprintf("%s-%d", nets[0], mask)
+	pod.ObjectMeta.Annotations[IPAnnotationKey] = fmt.Sprintf("%s-%s", nets[0], ip)
+	pod.ObjectMeta.Annotations[MaskAnnotationKey] = fmt.Sprintf("%s-%d", nets[0], mask)
+	pod.ObjectMeta.Annotations[GroupedLabel] = pod.ObjectMeta.Labels[GroupedLabel]
+
 	if location != "" {
 		pod.ObjectMeta.Annotations["location"] = location
 		if pod.Spec.NodeSelector == nil {
@@ -232,14 +242,25 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 }
 
 func GetGroupedIpFromPod(pod *v1.Pod) (group, ip string) {
-	group = pod.ObjectMeta.Labels[network.GroupedLabel]
-	if ips := pod.ObjectMeta.Annotations[network.IPAnnotationKey]; ips != "" {
+	group = pod.ObjectMeta.Labels[GroupedLabel]
+	if ips := pod.ObjectMeta.Annotations[IPAnnotationKey]; ips != "" {
 		ipArr := strings.Split(ips, "-")
 		if len(ipArr) == 2 {
 			ip = ipArr[1]
 		}
 	}
 	return
+}
+
+func ReleaseIPForAnnotations(namespace string, annotations map[string]string) error {
+	if ips := annotations[IPAnnotationKey]; ips != "" {
+		ipArr := strings.Split(ips, "-")
+		if len(ipArr) == 2 {
+			ip := ipArr[1]
+			return ReleaseGroupedIP(namespace, annotations[GroupedLabel], ip)
+		}
+	}
+	return nil
 }
 
 func ReleaseIPForPod(pod *v1.Pod) error {

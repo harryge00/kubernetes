@@ -49,7 +49,6 @@ import (
 	taintutils "k8s.io/kubernetes/pkg/util/taints"
 
 	"github.com/golang/glog"
-	"k8s.io/kubernetes/pkg/kubelet/network"
 )
 
 const (
@@ -578,7 +577,7 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
 		// Release IP for grouped pod.
 		if ip != "" {
-			releaseErr := ReleaseGroupedIP(pod.Namespace, pod.ObjectMeta.Labels[network.GroupedLabel], ip)
+			releaseErr := ReleaseGroupedIP(pod.Namespace, pod.ObjectMeta.Labels[GroupedLabel], ip)
 			glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
 		}
 		return err
@@ -604,6 +603,9 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedDeletePodReason, "Error deleting: %v", err)
 		return fmt.Errorf("unable to delete pods: %v", err)
 	} else {
+		if releaseIPErr := ReleaseIPForAnnotations(namespace, accessor.GetAnnotations()); releaseIPErr != nil {
+			glog.Warningf("Failed to release IP for pod %v: %v", podID, releaseIPErr)
+		}
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 	}
 	return nil
