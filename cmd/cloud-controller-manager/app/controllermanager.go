@@ -195,6 +195,9 @@ func StartControllers(s *options.CloudControllerManagerServer, kubeconfig *restc
 		return clientBuilder.ClientOrDie(serviceAccountName)
 	}
 
+	// IPAllocatorURL is the address to get and release IP.
+	controller.SetIPURL(s.IPAllocatorURL, s.IPLocation)
+
 	if cloud != nil {
 		// Initialize the cloud provider with a reference to the clientBuilder
 		cloud.Initialize(clientBuilder)

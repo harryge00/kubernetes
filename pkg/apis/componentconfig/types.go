@@ -360,6 +360,10 @@ type KubeControllerManagerConfiguration struct {
 	// through the kube-aggregator when enabled, instead of using the legacy metrics client
 	// through the API server proxy.
 	HorizontalPodAutoscalerUseRESTClients bool
+
+	// Address where controllers require/release IPs
+	IPAllocatorURL string
+	IPLocation     string
 }
 
 // VolumeConfiguration contains *all* enumerated flags meant to configure all volume

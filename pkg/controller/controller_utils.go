@@ -567,8 +567,19 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 	if labels.Set(pod.Labels).AsSelectorPreValidated().Empty() {
 		return fmt.Errorf("unable to create pods, no labels")
 	}
+
+	// Get macvlan IP for grouped pod.
+	ip, _, err := AddIPMaskIfPodLabeled(pod, namespace)
+	if err != nil {
+		glog.Errorf("Failed to add ip and mask for pod %v: %v", pod.Name, err)
+	}
 	if newPod, err := r.KubeClient.CoreV1().Pods(namespace).Create(pod); err != nil {
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
+		// Release IP for grouped pod.
+		if ip != "" {
+			releaseErr := ReleaseGroupedIP(pod.Namespace, pod.ObjectMeta.Labels[GroupedLabel], ip)
+			glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
+		}
 		return err
 	} else {
 		accessor, err := meta.Accessor(object)
@@ -592,6 +603,9 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedDeletePodReason, "Error deleting: %v", err)
 		return fmt.Errorf("unable to delete pods: %v", err)
 	} else {
+		if releaseIPErr := ReleaseIPForAnnotations(namespace, accessor.GetAnnotations()); releaseIPErr != nil {
+			glog.Warningf("Failed to release IP for pod %v: %v", podID, releaseIPErr)
+		}
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 	}
 	return nil
