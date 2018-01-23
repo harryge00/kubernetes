@@ -61,6 +61,8 @@ func NewCloudControllerManagerServer() *CloudControllerManagerServer {
 			LeaderElection:            leaderelectionconfig.DefaultLeaderElectionConfiguration(),
 			ControllerStartInterval:   metav1.Duration{Duration: 0 * time.Second},
 			RouteReconciliationPeriod: metav1.Duration{Duration: 10 * time.Second},
+			IPAllocatorURL:            "http://localhost:8080",
+			IPLocation:                "1199",
 		},
 		NodeStatusUpdateFrequency: metav1.Duration{Duration: 5 * time.Minute},
 	}
@@ -98,6 +100,8 @@ func (s *CloudControllerManagerServer) AddFlags(fs *pflag.FlagSet) {
 	fs.Int32Var(&s.KubeAPIBurst, "kube-api-burst", s.KubeAPIBurst, "Burst to use while talking with kubernetes apiserver.")
 	fs.DurationVar(&s.ControllerStartInterval.Duration, "controller-start-interval", s.ControllerStartInterval.Duration, "Interval between starting controller managers.")
 	fs.Int32Var(&s.ConcurrentServiceSyncs, "concurrent-service-syncs", s.ConcurrentServiceSyncs, "The number of services that are allowed to sync concurrently. Larger number = more responsive service management, but more CPU (and network) load")
+	fs.StringVar(&s.IPAllocatorURL, "ip-allocator-url", s.IPAllocatorURL, "Address where controllers require/release IPs")
+	fs.StringVar(&s.IPLocation, "ip-location", s.IPLocation, "Location of macvlan ip")
 	leaderelectionconfig.BindFlags(&s.LeaderElection, fs)
 
 	utilfeature.DefaultFeatureGate.AddFlag(fs)
