@@ -604,6 +604,8 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		PluginConfDir:     crOptions.CNIConfDir,
 		PluginBinDir:      crOptions.CNIBinDir,
 		MTU:               int(crOptions.NetworkPluginMTU),
+		MacvlanNetCard:    kubeCfg.MacvlanNetCard,
+		MacvlanMode:       kubeCfg.MacvlanMode,
 	}
 
 	klet.resourceAnalyzer = serverstats.NewResourceAnalyzer(klet, kubeCfg.VolumeStatsAggPeriod.Duration)

@@ -163,6 +163,10 @@ func (ds *dockerService) RunPodSandbox(config *runtimeapi.PodSandboxConfig) (id 
 			glog.Warningf("Failed to stop sandbox container %q for pod %q: %v", createResp.ID, config.Metadata.Name, err)
 		}
 	}
+	macvlanErr := ds.macvlanNetwork.SetUpPod(config.GetMetadata().Namespace, config.GetMetadata().Name, cID, config.Annotations)
+	if macvlanErr != nil {
+		glog.Warningf("Failed to SetUpPod with macvlan ip: %v", macvlanErr)
+	}
 	return createResp.ID, err
 }
 
@@ -225,6 +229,11 @@ func (ds *dockerService) StopPodSandbox(podSandboxID string) error {
 			ds.setNetworkReady(podSandboxID, false)
 		} else {
 			errList = append(errList, err)
+		}
+		// TODO: check if we can simplify the process of tearing down
+		macvlanErr := ds.macvlanNetwork.TearDownPod(namespace, name, cID)
+		if macvlanErr != nil {
+			glog.Warningf("Failed to TearDownPod with macvlan ip: %v", macvlanErr)
 		}
 	}
 	if err := ds.client.StopContainer(podSandboxID, defaultSandboxGracePeriod); err != nil {

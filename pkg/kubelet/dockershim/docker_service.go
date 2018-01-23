@@ -42,6 +42,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/network/cni"
 	"k8s.io/kubernetes/pkg/kubelet/network/hostport"
 	"k8s.io/kubernetes/pkg/kubelet/network/kubenet"
+	"k8s.io/kubernetes/pkg/kubelet/network/macvlan"
 	"k8s.io/kubernetes/pkg/kubelet/server/streaming"
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	utilstore "k8s.io/kubernetes/pkg/kubelet/util/store"
@@ -108,6 +109,11 @@ type NetworkPluginSettings struct {
 	PluginConfDir string
 	// MTU is the desired MTU for network devices created by the plugin.
 	MTU int
+
+	// The netcard used for macvlan, usually "eth0"
+	MacvlanNetCard string
+	// Default macvlan mode: "bridge"
+	MacvlanMode string
 
 	// RuntimeHost is an interface that serves as a trap-door from plugin back
 	// into the kubelet.
@@ -229,6 +235,10 @@ func NewDockerService(config *ClientConfig, podSandboxImage string, streamingCon
 		return nil, fmt.Errorf("didn't find compatible CNI plugin with given settings %+v: %v", pluginSettings, err)
 	}
 	ds.network = network.NewPluginManager(plug)
+
+	macvlanPlug := macvlan.NewPlugin(&ds.client, netHost, pluginSettings.MacvlanNetCard, pluginSettings.MacvlanNetCard, pluginSettings.MTU)
+	ds.macvlanNetwork = network.NewPluginManager(macvlanPlug)
+
 	glog.Infof("Docker cri networking managed by %v", plug.Name())
 
 	// NOTE: cgroup driver is only detectable in docker 1.11+
@@ -289,6 +299,8 @@ type dockerService struct {
 	streamingServer  streaming.Server
 
 	network *network.PluginManager
+
+	macvlanNetwork *network.PluginManager
 	// Map of podSandboxID :: network-is-ready
 	networkReady     map[string]bool
 	networkReadyLock sync.Mutex
