@@ -24,12 +24,6 @@ const (
 	macPrefix   = "02:42"
 )
 
-type NetConf struct {
-	NetCardName string `json:"master"`
-	MacvlanMode   string `json:"mode"`
-	MTU    int    `json:"mtu"`
-}
-
 type NetType string
 type Typer struct {
 	NetType NetType `json:"nettype"`
@@ -50,8 +44,12 @@ type DataToDel struct {
 
 type macvlanNetworkPlugin struct {
 	network.NoopNetworkPlugin
-	netconf     NetConf
 	macvlanName string
+	// If NetCardName or MacvlanMode doesn't set, SetUpPod and TearDownPod will not work
+	NetCardName string
+	MacvlanMode   string
+
+	MTU    int
 	host        network.Host
 	netdev      string
 	typer       string
@@ -70,11 +68,9 @@ func NewPlugin(client *libdocker.Interface, host network.Host, netcardName strin
 		macvlanName: "macvlan",
 		dclient: client,
 		host: host,
-	}
-	plugin.netconf = NetConf{
 		NetCardName: netcardName,
-		MTU:    mtu,
-		MacvlanMode:   mode,
+		MacvlanMode: mode,
+		MTU: mtu,
 	}
 
 	// TODO: move default mask to config
@@ -102,6 +98,10 @@ func getNetCardAndType(labels map[string]string) (error, []string) {
 }
 
 func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID, annotations map[string]string) error {
+	if plugin.NetCardName == "" || plugin.MacvlanMode == "" {
+		// Macvlan Mode has not been activated
+		return nil
+	}
 	if annotations[network.NetworkKey] == "" || annotations[network.IPAnnotationKey] == "" ||
 		annotations[network.MaskAnnotationKey] == "" {
 		glog.V(6).Info("Not enough annotation of macvlan SetUpPod: %v", annotations)
@@ -157,6 +157,10 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 }
 
 func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.ContainerID) error {
+	if plugin.NetCardName == "" || plugin.MacvlanMode == "" {
+		// Macvlan Mode has not been activated
+		return nil
+	}
 	glog.V(6).Infof("TearDownPod for %v/%v %v", namespace, name, id.ID)
 	containerinfo, err := (*plugin.dclient).InspectContainer(id.ID)
 	if err != nil {
@@ -270,13 +274,13 @@ func generateMacAddr(ipv4 string) (net.HardwareAddr, error) {
 func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS, ipv4 net.IP, gw string, mask int, ipv4str string) (*current.Interface, error) {
 
 	macvlan := &current.Interface{}
-	mode, err := modeFromString(plugin.netconf.MacvlanMode)
+	mode, err := modeFromString(plugin.MacvlanMode)
 	if err != nil {
 		return nil, err
 	}
-	m, err := netlink.LinkByName(plugin.netconf.NetCardName)
+	m, err := netlink.LinkByName(plugin.NetCardName)
 	if err != nil {
-		return nil, fmt.Errorf("Peiqi Macvlan failed to lookup master %q: %v", plugin.netconf.NetCardName, err)
+		return nil, fmt.Errorf("Peiqi Macvlan failed to lookup master %q: %v", plugin.NetCardName, err)
 	}
 
 	tmpName, err := ip.RandomVethName()
@@ -287,7 +291,7 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 
 	mv := &netlink.Macvlan{
 		LinkAttrs: netlink.LinkAttrs{
-			MTU:         plugin.netconf.MTU,
+			MTU:         plugin.MTU,
 			Name:        tmpName,
 			ParentIndex: m.Attrs().Index,
 			Namespace:   netlink.NsFd(int(netns.Fd())),

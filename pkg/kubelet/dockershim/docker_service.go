@@ -110,6 +110,11 @@ type NetworkPluginSettings struct {
 	// MTU is the desired MTU for network devices created by the plugin.
 	MTU int
 
+	// The netcard used for macvlan, usually "eth0"
+	MacvlanNetCard string
+	// Default macvlan mode: "bridge"
+	MacvlanMode string
+
 	// RuntimeHost is an interface that serves as a trap-door from plugin back
 	// into the kubelet.
 	// TODO: This shouldn't be required, remove once we move host ports into CNI
@@ -231,7 +236,7 @@ func NewDockerService(config *ClientConfig, podSandboxImage string, streamingCon
 	}
 	ds.network = network.NewPluginManager(plug)
 
-	macvlanPlug := macvlan.NewPlugin(&ds.client, netHost, "eth0", "bridge", pluginSettings.MTU)
+	macvlanPlug := macvlan.NewPlugin(&ds.client, netHost, pluginSettings.MacvlanNetCard, pluginSettings.MacvlanNetCard, pluginSettings.MTU)
 	ds.macvlanNetwork = network.NewPluginManager(macvlanPlug)
 
 	glog.Infof("Docker cri networking managed by %v", plug.Name())

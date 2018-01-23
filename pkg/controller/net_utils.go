@@ -33,7 +33,7 @@ var (
 	baseIPURL    = "http://localhost:8080"
 	getIPURL     = "http://localhost:8080/api/net/ip/occupy"
 	releaseIPURL = "http://localhost:8080/api/net/ip/release"
-	ipLocation   = "1199"
+	defaultIPLocation   = "1199"
 )
 type IpResp struct {
 	Result  IpResult `json:"result,omitempty"`
@@ -71,7 +71,7 @@ func SetIPURL(url, location string) {
 	URLSet = true
 	getIPURL = url + "/api/net/ip/occupy"
 	releaseIPURL = url + "/api/net/ip/release"
-	ipLocation = location
+	defaultIPLocation = location
 }
 
 func GetIPMaskForPod(reqBytes []byte) (ip, location string, mask int, httpCode int, err error) {
@@ -192,7 +192,7 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 	}
 	req := IpRequire{
 		UserId:   uid,
-		Location: ipLocation,
+		Location: defaultIPLocation,
 	}
 	if groupLabel != "" {
 		req.Group = groupLabel
