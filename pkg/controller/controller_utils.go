@@ -598,12 +598,14 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 	if err != nil {
 		return fmt.Errorf("object does not have ObjectMeta, %v", err)
 	}
-	glog.V(2).Infof("Controller %v deleting pod %v/%v", accessor.GetName(), namespace, podID)
+	po, _ := r.KubeClient.CoreV1().Pods(namespace).Get(podID, metav1.GetOptions{})
+
+	glog.V(2).Infof("Controller %v deleting pod %v/%v", accessor.GetGenerateName(), namespace, podID)
 	if err := r.KubeClient.CoreV1().Pods(namespace).Delete(podID, nil); err != nil {
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedDeletePodReason, "Error deleting: %v", err)
 		return fmt.Errorf("unable to delete pods: %v", err)
 	} else {
-		if releaseIPErr := ReleaseIPForAnnotations(namespace, accessor.GetAnnotations()); releaseIPErr != nil {
+		if releaseIPErr := ReleaseIPForPod(po); releaseIPErr != nil {
 			glog.Warningf("Failed to release IP for pod %v: %v", podID, releaseIPErr)
 		}
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)

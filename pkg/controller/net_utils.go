@@ -7,16 +7,15 @@ package controller
 import (
 	"k8s.io/api/core/v1"
 
-	"github.com/golang/glog"
 	"bytes"
-	"fmt"
-	"net/http"
 	"encoding/json"
+	"fmt"
+	"github.com/golang/glog"
 	"io/ioutil"
-	"strings"
+	"net/http"
 	"strconv"
+	"strings"
 	"time"
-
 )
 
 // The consts below are Used for macvlan plugin
@@ -29,12 +28,13 @@ const (
 )
 
 var (
-	URLSet       = false
-	baseIPURL    = "http://localhost:8080"
-	getIPURL     = "http://localhost:8080/api/net/ip/occupy"
-	releaseIPURL = "http://localhost:8080/api/net/ip/release"
-	defaultIPLocation   = "1199"
+	URLSet            = false
+	baseIPURL         = "http://localhost:8080"
+	getIPURL          = "http://localhost:8080/api/net/ip/occupy"
+	releaseIPURL      = "http://localhost:8080/api/net/ip/release"
+	defaultIPLocation = "1199"
 )
+
 type IpResp struct {
 	Result  IpResult `json:"result,omitempty"`
 	Code    int      `json:"code,omitempty"`
@@ -228,7 +228,9 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 
 	pod.ObjectMeta.Annotations[IPAnnotationKey] = fmt.Sprintf("%s-%s", nets[0], ip)
 	pod.ObjectMeta.Annotations[MaskAnnotationKey] = fmt.Sprintf("%s-%d", nets[0], mask)
-	pod.ObjectMeta.Annotations[GroupedLabel] = pod.ObjectMeta.Labels[GroupedLabel]
+	if pod.ObjectMeta.Labels[GroupedLabel] != "" {
+		pod.ObjectMeta.Annotations[GroupedLabel] = pod.ObjectMeta.Labels[GroupedLabel]
+	}
 
 	if location != "" {
 		pod.ObjectMeta.Annotations["location"] = location
@@ -264,7 +266,7 @@ func ReleaseIPForAnnotations(namespace string, annotations map[string]string) er
 }
 
 func ReleaseIPForPod(pod *v1.Pod) error {
-	if URLSet {
+	if URLSet && pod != nil {
 		if group, ip := GetGroupedIpFromPod(pod); ip != "" && ip != "none" && ip != "empty" {
 			glog.Infof("Releasing IP %v for pod %v", ip, pod.ObjectMeta)
 			err := ReleaseGroupedIP(pod.Namespace, group, ip)

@@ -236,7 +236,7 @@ func NewDockerService(config *ClientConfig, podSandboxImage string, streamingCon
 	}
 	ds.network = network.NewPluginManager(plug)
 
-	macvlanPlug := macvlan.NewPlugin(&ds.client, netHost, pluginSettings.MacvlanNetCard, pluginSettings.MacvlanNetCard, pluginSettings.MTU)
+	macvlanPlug := macvlan.NewPlugin(&ds.client, netHost, pluginSettings.MacvlanNetCard, pluginSettings.MacvlanMode, pluginSettings.MTU)
 	ds.macvlanNetwork = network.NewPluginManager(macvlanPlug)
 
 	glog.Infof("Docker cri networking managed by %v", plug.Name())

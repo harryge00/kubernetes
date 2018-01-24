@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	gw          = "66.1.1.254"
-	macPrefix   = "02:42"
+	gw        = "66.1.1.254"
+	macPrefix = "02:42"
 )
 
 type NetType string
@@ -47,30 +47,30 @@ type macvlanNetworkPlugin struct {
 	macvlanName string
 	// If NetCardName or MacvlanMode doesn't set, SetUpPod and TearDownPod will not work
 	NetCardName string
-	MacvlanMode   string
+	MacvlanMode string
 
-	MTU    int
-	host        network.Host
-	netdev      string
-	typer       string
-	ipv4        string
-	dclient     *libdocker.Interface
-	err         error
-	ip1181      net.IP
-	mask1181    int
-	ip1199      net.IP
-	mask1199    int
+	MTU      int
+	host     network.Host
+	netdev   string
+	typer    string
+	ipv4     string
+	dclient  *libdocker.Interface
+	err      error
+	ip1181   net.IP
+	mask1181 int
+	ip1199   net.IP
+	mask1199 int
 }
 
 func NewPlugin(client *libdocker.Interface, host network.Host, netcardName string, mode string, mtu int) network.NetworkPlugin {
 	glog.Infof("Macvlan plugin initializing with %v %v %v", netcardName, mode)
 	plugin := &macvlanNetworkPlugin{
 		macvlanName: "macvlan",
-		dclient: client,
-		host: host,
+		dclient:     client,
+		host:        host,
 		NetCardName: netcardName,
 		MacvlanMode: mode,
-		MTU: mtu,
+		MTU:         mtu,
 	}
 
 	// TODO: move default mask to config
@@ -102,13 +102,12 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 		// Macvlan Mode has not been activated
 		return nil
 	}
-	if annotations[network.NetworkKey] == "" || annotations[network.IPAnnotationKey] == "" ||
-		annotations[network.MaskAnnotationKey] == "" {
+	if annotations[network.IPAnnotationKey] == "" || annotations[network.MaskAnnotationKey] == "" {
 		glog.V(6).Info("Not enough annotation of macvlan SetUpPod: %v", annotations)
 		return nil
 	}
 
-	netdev := strings.Split(annotations[network.NetworkKey], "-")
+	netdev := strings.Split(annotations[network.IPAnnotationKey], "-")
 	if len(netdev) != 2 {
 		return fmt.Errorf("Cannot get netdev from: %v", annotations)
 	}

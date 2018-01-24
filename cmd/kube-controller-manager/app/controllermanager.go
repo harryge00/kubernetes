@@ -123,6 +123,9 @@ func Run(s *options.CMServer) error {
 
 	go startHTTP(s)
 
+	// IPAllocatorURL is the address to get and release IP.
+	controller.SetIPURL(s.IPAllocatorURL, s.IPLocation)
+
 	recorder := createRecorder(kubeClient)
 
 	run := func(stop <-chan struct{}) {
