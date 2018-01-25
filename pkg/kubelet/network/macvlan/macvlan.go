@@ -225,13 +225,8 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 		return fmt.Errorf("Cannot get netType from: %v", err)
 	}
 
-	if annotations[network.NetworkKey] == "" || annotations[network.IPAnnotationKey] == "" ||
-		annotations[network.MaskAnnotationKey] == "" {
+	if annotations[network.IPAnnotationKey] == "" || annotations[network.MaskAnnotationKey] == "" {
 		return fmt.Errorf("Not enough annotation of macvlan SetUpPod: %v", annotations)
-	}
-	netdev := strings.Split(annotations[network.NetworkKey], "-")
-	if len(netdev) != 2 {
-		return fmt.Errorf("Cannot get netdev from: %v", annotations)
 	}
 
 	ipsAnno := annotations[network.IPAnnotationKey]
@@ -263,7 +258,7 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	}
 	defer netns.Close()
 
-	err = plugin.cmdAdd(netdev[0], netns, parsedIP, gw, mask, ipv4)
+	err = plugin.cmdAdd(ips[0], netns, parsedIP, gw, mask, ipv4)
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
 	}
