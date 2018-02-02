@@ -67,7 +67,6 @@ func NewFakeKubeRuntimeManager(runtimeService internalapi.RuntimeService, imageS
 		machineInfo:         machineInfo,
 		osInterface:         osInterface,
 		networkPlugin:       networkManager,
-		macvlanPlugin:       macvlanManager,
 		runtimeHelper:       runtimeHelper,
 		runtimeService:      runtimeService,
 		imageService:        imageService,

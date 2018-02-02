@@ -116,7 +116,6 @@ func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componen
 }
 
 func (plugin *macvlanNetworkPlugin) GetterIP(netType string) (ipv4 string, mask int, err error) {
-
 	//from plugin.typer, plugin.server to get IP and mask
 	data := Data{}
 	nettyper := NetType(netType)
