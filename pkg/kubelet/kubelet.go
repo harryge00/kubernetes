@@ -105,7 +105,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/procfs"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
-//	"k8s.io/kubernetes/pkg/kubelet/leaky"
+	//	"k8s.io/kubernetes/pkg/kubelet/leaky"
 )
 
 const (
@@ -176,27 +176,27 @@ type SyncHandler interface {
 
 // Used to patch second network card
 type Transformation struct {
-	EventType string `json:"eventType,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	PodName string	`json:"podName,omitempty"`
-	RcName string	`json:"rcName,omitempty"`
-	Action string `json:"action,omitempty"`
-	Ip string     `json:"ip,omitempty"`
+	EventType  string `json:"eventType,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	PodName    string `json:"podName,omitempty"`
+	RcName     string `json:"rcName,omitempty"`
+	Action     string `json:"action,omitempty"`
+	Ip         string `json:"ip,omitempty"`
 	NetDevName string `json:"netDevName,omitempty"`
 	NetDevType string `json:"netDevType,omitempty"`
 }
 
 type Data struct {
-	MetaData  Metadata   `json:"metadata"`
+	MetaData Metadata `json:"metadata"`
 }
 
 type Metadata struct {
-	Annotations     Annotation     `json:"annotations"`
+	Annotations Annotation `json:"annotations"`
 }
 
 type Annotation struct {
-	Ips      string      `json:"ips"`
-	Mask      string      `json:"mask"`
+	Ips  string `json:"ips"`
+	Mask string `json:"mask"`
 }
 
 // Option is a functional option type for Kubelet
@@ -500,7 +500,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		iptablesMasqueradeBit:                   int(kubeCfg.IPTablesMasqueradeBit),
 		iptablesDropBit:                         int(kubeCfg.IPTablesDropBit),
 		experimentalHostUserNamespaceDefaulting: utilfeature.DefaultFeatureGate.Enabled(features.ExperimentalHostUserNamespaceDefaultingGate),
-		sampleWindow:           int32(kubeCfg.SampleWindow),
+		sampleWindow:                            int32(kubeCfg.SampleWindow),
 	}
 
 	secretManager := secret.NewCachingSecretManager(
@@ -522,11 +522,10 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	glog.Infof("Hairpin mode set to %q", klet.hairpinMode)
 
 	//if plug, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
-	if plug, macvlanPlug, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, kubeCfg.MacvlanConfigFile, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
+	if plug, _, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, kubeCfg.MacvlanConfigFile, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
 		return nil, err
 	} else {
 		klet.networkPlugin = plug
-		klet.macvlanPlugin = macvlanPlug
 	}
 
 	machineInfo, err := klet.GetCachedMachineInfo()
@@ -556,13 +555,13 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		binDir = kubeCfg.NetworkPluginDir
 	}
 	pluginSettings := dockershim.NetworkPluginSettings{
-		HairpinMode:       klet.hairpinMode,
-		NonMasqueradeCIDR: klet.nonMasqueradeCIDR,
-		PluginName:        kubeCfg.NetworkPluginName,
+		HairpinMode:         klet.hairpinMode,
+		NonMasqueradeCIDR:   klet.nonMasqueradeCIDR,
+		PluginName:          kubeCfg.NetworkPluginName,
 		MacvlanPluginConfig: kubeCfg.MacvlanConfigFile,
-		PluginConfDir:     kubeCfg.CNIConfDir,
-		PluginBinDir:      binDir,
-		MTU:               int(kubeCfg.NetworkPluginMTU),
+		PluginConfDir:       kubeCfg.CNIConfDir,
+		PluginBinDir:        binDir,
+		MTU:                 int(kubeCfg.NetworkPluginMTU),
 	}
 
 	// Remote runtime shim just cannot talk back to kubelet, so it doesn't
@@ -632,7 +631,6 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 			klet.podManager,
 			kubeDeps.OSInterface,
 			klet.networkPlugin,
-			klet.macvlanPlugin,
 			klet,
 			klet.httpClient,
 			imageBackOff,
@@ -664,7 +662,6 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 				ContainerLogsDir,
 				kubeDeps.OSInterface,
 				klet.networkPlugin,
-				klet.macvlanPlugin,
 				klet,
 				klet.httpClient,
 				dockerExecHandler,
@@ -944,9 +941,6 @@ type Kubelet struct {
 
 	// Network plugin.
 	networkPlugin network.NetworkPlugin
-
-	// Macvlan network plugin
-	macvlanPlugin network.NetworkPlugin
 
 	// Handles container probing.
 	probeManager prober.Manager
@@ -1336,7 +1330,6 @@ func (kl *Kubelet) GetKubeClient() clientset.Interface {
 	return kl.kubeClient
 }
 
-
 // GetClusterDNS returns a list of the DNS servers and a list of the DNS search
 // domains of the cluster.
 func (kl *Kubelet) GetClusterDNS(pod *v1.Pod) ([]string, []string, bool, error) {
@@ -1495,19 +1488,19 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 		}
 	}
 
-/*
-	podInfraContainerStatus := podStatus.FindContainerStatusByName(leaky.PodInfraContainerName)
-	if podInfraContainerStatus == nil || podInfraContainerStatus.State != kubecontainer.ContainerStateRunning {
-		glog.V(4).Infof("Found pod infra container for %q is not at runing state", format.Pod(pod))
-		glog.V(4).Infof("Change the Pod ConditionStatus for %q ", format.Pod(pod))
-		for l, c := range apiPodStatus.Conditions {
-			if c.Type == v1.PodReady {
-				apiPodStatus.Conditions[l].Status = v1.ConditionFalse
+	/*
+		podInfraContainerStatus := podStatus.FindContainerStatusByName(leaky.PodInfraContainerName)
+		if podInfraContainerStatus == nil || podInfraContainerStatus.State != kubecontainer.ContainerStateRunning {
+			glog.V(4).Infof("Found pod infra container for %q is not at runing state", format.Pod(pod))
+			glog.V(4).Infof("Change the Pod ConditionStatus for %q ", format.Pod(pod))
+			for l, c := range apiPodStatus.Conditions {
+				if c.Type == v1.PodReady {
+					apiPodStatus.Conditions[l].Status = v1.ConditionFalse
+				}
 			}
 		}
-	}
 
-*/
+	*/
 	// Update status in the status manager
 	kl.statusManager.SetPodStatus(pod, apiPodStatus)
 
@@ -1635,7 +1628,7 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 		updateMetadata := Data{
 			MetaData: Metadata{
 				Annotations: Annotation{
-					Ips: pod.ObjectMeta.Annotations[network.IPAnnotationKey],
+					Ips:  pod.ObjectMeta.Annotations[network.IPAnnotationKey],
 					Mask: pod.ObjectMeta.Annotations[network.MaskAnnotationKey],
 				},
 			},

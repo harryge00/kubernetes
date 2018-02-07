@@ -156,9 +156,6 @@ type DockerManager struct {
 	// Network plugin manager.
 	networkPlugin *knetwork.PluginManager
 
-	// Macvlan plugin
-	macvlanPlugin *knetwork.PluginManager
-
 	// Health check results.
 	livenessManager proberesults.Manager
 
@@ -231,7 +228,6 @@ func NewDockerManager(
 	containerLogsDir string,
 	osInterface kubecontainer.OSInterface,
 	networkPlugin knetwork.NetworkPlugin,
-	macvlanPlugin knetwork.NetworkPlugin,
 	runtimeHelper kubecontainer.RuntimeHelper,
 	httpClient types.HttpGetter,
 	execHandler ExecHandler,
@@ -273,8 +269,6 @@ func NewDockerManager(
 		cgroupDriver:           cgroupDriver,
 		containerLogsDir:       containerLogsDir,
 		networkPlugin:          knetwork.NewPluginManager(networkPlugin),
-		macvlanPlugin:          knetwork.NewPluginManager(macvlanPlugin),
-
 		livenessManager:        livenessManager,
 		runtimeHelper:          runtimeHelper,
 		execHandler:            execHandler,
@@ -2262,7 +2256,6 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 			}
 		}
 	}
-
 
 	// Keep terminated init containers fairly aggressively controlled
 	dm.pruneInitContainersBeforeStart(pod, podStatus, containerChanges.InitContainersToKeep)

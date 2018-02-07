@@ -31,7 +31,6 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	"k8s.io/kubernetes/pkg/kubelet/types"
-	"k8s.io/kubernetes/pkg/kubelet/network"
 )
 
 const (
@@ -64,7 +63,7 @@ func (ds *dockerService) RunPodSandbox(config *runtimeapi.PodSandboxConfig) (str
 	// see: http://kubernetes.io/docs/user-guide/images/#configuring-nodes-to-authenticate-to-a-private-repository
 	// Only pull sandbox image when it's not present - v1.PullIfNotPresent.
 	if err := ensureSandboxImageExists(ds.client, image); err != nil {
-		return "",  err
+		return "", err
 	}
 	// Step 2: Create the sandbox container.
 	createConfig, err := ds.makeSandboxDockerConfig(config, image)
@@ -129,6 +128,11 @@ func (ds *dockerService) RunPodSandbox(config *runtimeapi.PodSandboxConfig) (str
 		if err := ds.client.StopContainer(createResp.ID, defaultSandboxGracePeriod); err != nil {
 			glog.Warningf("Failed to stop sandbox container %q for pod %q: %v", createResp.ID, config.Metadata.Name, err)
 		}
+	}
+
+	macvlanErr := ds.macvlanPlugin.SetUpPod(config.GetMetadata().Namespace, config.GetMetadata().Name, cID, config.Annotations)
+	if macvlanErr != nil {
+		glog.Warningf("Failed to SetUpPod with macvlan ip: %v", macvlanErr)
 	}
 
 	return createResp.ID, err
@@ -201,9 +205,11 @@ func (ds *dockerService) StopPodSandbox(podSandboxID string) error {
 		if err := ds.networkPlugin.TearDownPod(namespace, name, cID); err != nil {
 			errList = append(errList, err)
 		}
-		// Ignore error info from delNetCard.
-		// TODO: This may lead to "ip leak", but it's better than blocking "StopPodSandbox"
-		ds.delNetCard(namespace, name, cID)
+		// TODO: check if we can simplify the process of tearing down
+		macvlanErr := ds.macvlanPlugin.TearDownPod(namespace, name, cID)
+		if macvlanErr != nil {
+			glog.Warningf("Failed to TearDownPod with macvlan ip: %v", macvlanErr)
+		}
 	}
 	if err := ds.client.StopContainer(podSandboxID, defaultSandboxGracePeriod); err != nil {
 		glog.Errorf("Failed to stop sandbox %q: %v", podSandboxID, err)
@@ -600,17 +606,4 @@ func toCheckpointProtocol(protocol runtimeapi.Protocol) Protocol {
 	}
 	glog.Warningf("Unknown protocol %q: defaulting to TCP", protocol)
 	return protocolTCP
-}
-
-func (ds *dockerService) delNetCard(Namespace, Name string, containerID kubecontainer.ContainerID) error {
-	if ds.macvlanPlugin.PluginName() == network.MacvlanPluginName {
-		// here, we get the second network card ip to check its status.
-		err := ds.macvlanPlugin.TearDownPod(Namespace, Name, containerID)
-		if err != nil {
-			glog.Errorf("Failed to delete the IP and tear down the Pod, please check. %v", err)
-			return  err
-		}
-
-	}
-	return nil
 }
