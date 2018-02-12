@@ -742,11 +742,11 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 				ref := pod.OwnerReferences[0]
 				switch ref.Kind {
 				case "ReplicationController":
-					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
+					util.RecordRCPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
 				case "Job":
-					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+					util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
 				case "StatefulSet":
-					util.RecordStatefulSetEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
+					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
 				}
 			}
 		}
@@ -779,11 +779,11 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 				// TODO: maybe deprecated because events are not sent from here.
 				switch ref.Kind {
 				case "ReplicationController":
-					util.RecordRCEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
+					util.RecordRCPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
 				case "Job":
-					util.RecordJobEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
+					util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
 				case "StatefulSet":
-					util.RecordStatefulSetEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodReady")
+					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodReady")
 				}
 			}
 		}

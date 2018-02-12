@@ -27,10 +27,11 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/kubernetes/pkg/api/v1"
 	v1core "k8s.io/kubernetes/pkg/client/clientset_generated/clientset/typed/core/v1"
+	"k8s.io/kubernetes/pkg/util/podchanges"
 )
 
 // updateReplicationControllerStatus attempts to update the Status.Replicas of the given controller, with a single GET/PUT retry.
-func updateReplicationControllerStatus(c v1core.ReplicationControllerInterface, rc v1.ReplicationController, newStatus v1.ReplicationControllerStatus) (*v1.ReplicationController, error) {
+func (rm *ReplicationManager) updateReplicationControllerStatus(c v1core.ReplicationControllerInterface, rc v1.ReplicationController, newStatus v1.ReplicationControllerStatus) (*v1.ReplicationController, error) {
 	// This is the steady state. It happens when the rc doesn't have any expectations, since
 	// we do a periodic relist every 30s. If the generations differ but the replicas are
 	// the same, a caller might've resized to the same replica count.
@@ -48,6 +49,15 @@ func updateReplicationControllerStatus(c v1core.ReplicationControllerInterface, 
 	// same status.
 	newStatus.ObservedGeneration = rc.Generation
 
+	// Variables indicate whethter the RC becomes ready/unready
+	var beReady, beNotReady bool
+	if newStatus.ReadyReplicas == *rc.Spec.Replicas && newStatus.ReadyReplicas > *rc.Spec.Replicas {
+		// ReadyReplicas increased to spec.Replicas. RC is ready.
+		beReady = true
+	} else if rc.Status.ReadyReplicas == *rc.Spec.Replicas && newStatus.ReadyReplicas > *rc.Spec.Replicas {
+		// ReadyReplicas decreased from spec.Replicas. RC is NOT ready.
+		beNotReady = true
+	}
 	var getErr, updateErr error
 	var updatedRC *v1.ReplicationController
 	for i, rc := 0, &rc; ; i++ {
@@ -61,6 +71,11 @@ func updateReplicationControllerStatus(c v1core.ReplicationControllerInterface, 
 		rc.Status = newStatus
 		updatedRC, updateErr = c.UpdateStatus(rc)
 		if updateErr == nil {
+			if beReady {
+				podchanges.RecordRCStatusEvent(rm.recorder, rc.Name, rc.Namespace, "RcStatusUpdate", "RcReady")
+			} else if beNotReady {
+				podchanges.RecordRCStatusEvent(rm.recorder, rc.Name, rc.Namespace, "RcStatusUpdate", "RcNotReady")
+			}
 			return updatedRC, nil
 		}
 		// Stop retrying if we exceed statusUpdateRetries - the replicationController will be requeued with a rate limit.

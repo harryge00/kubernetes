@@ -102,7 +102,7 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 	}
 	spc.recordPodEvent("create", set, pod, err)
 	// Send events for servicemanager.
-	util.RecordStatefulSetEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodAdd")
+	util.RecordStatefulSetPodEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodAdd")
 	return err
 }
 
@@ -169,22 +169,35 @@ func (spc *realStatefulPodControl) DeleteStatefulPod(set *apps.StatefulSet, pod 
 		}
 	}
 	// Send events for servicemanager.
-	util.RecordStatefulSetEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodDelete")
+	util.RecordStatefulSetPodEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodDelete")
 
 	return err
 }
 
 func (spc *realStatefulPodControl) UpdateStatefulSetStatus(set *apps.StatefulSet, replicas int32, generation int64) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		glog.Infof("UpdateStatefulSetStatus: %v, %v %v", set.Status, replicas, generation)
+		var beReady, beNotReady bool
+
+		if replicas == *set.Spec.Replicas && set.Status.Replicas < *set.Spec.Replicas {
+			beReady = true
+		} else if set.Status.Replicas == *set.Spec.Replicas && replicas < set.Status.Replicas {
+			beNotReady = true
+		}
 		set.Status.Replicas = replicas
 		set.Status.ObservedGeneration = &generation
 		_, err := spc.client.Apps().StatefulSets(set.Namespace).UpdateStatus(set)
 		if err == nil {
+			if beReady {
+				util.RecordStatefulSetStatusEvent(spc.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetReady")
+			}
+			if beNotReady {
+				util.RecordStatefulSetStatusEvent(spc.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetNotReady")
+			}
 			return nil
 		}
 
 		updateErr := err
-
 		if updated, err := spc.setLister.StatefulSets(set.Namespace).Get(set.Name); err == nil {
 			// make a copy so we don't mutate the shared cache
 			if copy, err := api.Scheme.DeepCopy(updated); err == nil {

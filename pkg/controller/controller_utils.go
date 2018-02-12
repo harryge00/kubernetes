@@ -816,9 +816,9 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		glog.V(4).Infof("Controller %v created pod %v", accessor.GetName(), newPod.Name)
 		switch controllerRef.Kind {
 		case "ReplicationController":
-			util.RecordRCEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "RcPodAdd", "RcPodAdd")
+			util.RecordRCPodEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "RcPodAdd", "RcPodAdd")
 		case "Job":
-			util.RecordJobEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "JobPodAdd", "JobPodAdd")
+			util.RecordJobPodEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "JobPodAdd", "JobPodAdd")
 		}
 
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulCreatePodReason, "Created pod: %v", newPod.Name)
@@ -848,9 +848,9 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 			}
 			switch pod.OwnerReferences[0].Kind {
 			case "ReplicationController":
-				util.RecordRCEvent(r.Recorder, accessor.GetName(), namespace, podID, "RcPodDelete", "RcPodDelete")
+				util.RecordRCPodEvent(r.Recorder, accessor.GetName(), namespace, podID, "RcPodDelete", "RcPodDelete")
 			case "Job":
-				util.RecordJobEvent(r.Recorder, accessor.GetName(), namespace, podID, "JobPodDelete", "JobPodDelete")
+				util.RecordJobPodEvent(r.Recorder, accessor.GetName(), namespace, podID, "JobPodDelete", "JobPodDelete")
 			}
 			r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 		}
