@@ -84,7 +84,8 @@ type ReplicationManager struct {
 	podListerSynced cache.InformerSynced
 
 	// Controllers that need to be synced
-	queue workqueue.RateLimitingInterface
+	queue    workqueue.RateLimitingInterface
+	recorder *record.EventRecorder
 }
 
 // NewReplicationManager configures a replication manager with the specified event recorder
@@ -97,15 +98,17 @@ func NewReplicationManager(podInformer coreinformers.PodInformer, rcInformer cor
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(kubeClient.Core().RESTClient()).Events("")})
 
+	recorder := eventBroadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: "replication-controller"})
 	rm := &ReplicationManager{
 		kubeClient: kubeClient,
 		podControl: controller.RealPodControl{
 			KubeClient: kubeClient,
-			Recorder:   eventBroadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: "replication-controller"}),
+			Recorder:   recorder,
 		},
 		burstReplicas: burstReplicas,
 		expectations:  controller.NewUIDTrackingControllerExpectations(controller.NewControllerExpectations()),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "replicationmanager"),
+		recorder:      &recorder,
 	}
 
 	rcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -650,7 +653,7 @@ func (rm *ReplicationManager) syncReplicationController(key string) error {
 	newStatus := calculateStatus(rc, filteredPods, manageReplicasErr)
 
 	// Always updates status as pods come up or die.
-	updatedRC, err := updateReplicationControllerStatus(rm.kubeClient.Core().ReplicationControllers(rc.Namespace), *rc, newStatus)
+	updatedRC, err := rm.updateReplicationControllerStatus(rm.kubeClient.Core().ReplicationControllers(rc.Namespace), *rc, newStatus)
 	if err != nil {
 		// Multiple things could lead to this update failing.  Returning an error causes a requeue without forcing a hotloop
 		return err

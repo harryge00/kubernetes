@@ -446,9 +446,9 @@ func (jm *JobController) syncJob(key string) error {
 		}
 		// Send events and delete pod if job is finished.
 		if IsJobSuccessed(&job) {
-			podchanges.RecordJobEvent(jm.recorder, job.Name, job.Namespace, "", "JobComplete", "JobComplete")
+			podchanges.RecordJobPodEvent(jm.recorder, job.Name, job.Namespace, "", "JobComplete", "JobComplete")
 		} else if IsJobFailed(&job) {
-			podchanges.RecordJobEvent(jm.recorder, job.Name, job.Namespace, "", "JobFailed", "JobFailed")
+			podchanges.RecordJobPodEvent(jm.recorder, job.Name, job.Namespace, "", "JobFailed", "JobFailed")
 		}
 
 	}
