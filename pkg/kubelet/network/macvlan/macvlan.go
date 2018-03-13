@@ -116,6 +116,7 @@ func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componen
 	return nil
 }
 
+// Deprecated: Now IPs are got by kube-controller.
 func (plugin *macvlanNetworkPlugin) GetterIP(netType string) (ipv4 string, mask int, err error) {
 	//from plugin.typer, plugin.server to get IP and mask
 	data := Data{}
@@ -260,11 +261,11 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	}
 	defer netns.Close()
 
-	err = plugin.cmdAdd(ips[0], netns, parsedIP, mask, ipv4, routes)
+	iface, err := plugin.createMacvlan(ips[0], netns, parsedIP, mask, ipv4, routes)
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
 	}
-	glog.V(6).Infof("Successfully SetUpPod for %v/%v", namespace, name)
+	glog.V(6).Infof("Successfully SetUpPod for %v/%v. Iface：%v", namespace, name, iface)
 	return nil
 }
 
@@ -282,8 +283,8 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 	fullnetns := containerinfo.NetworkSettings.SandboxKey
 	netns, err := ns.GetNS(fullnetns)
 	if err != nil {
-		glog.Errorf("failed to open netns %q: %v", netns, err)
-		return fmt.Errorf("failed to open netns %q: %v", netns, err)
+		glog.Errorf("failed to open netns %v: %v", netns, err)
+		return fmt.Errorf("failed to open netns %v: %v", netns, err)
 	}
 	defer netns.Close()
 	// IP is released by controllers now.
@@ -297,6 +298,7 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 
 }
 
+// Deprecated
 //if configured double net dev, we should to check the pod status for second net card
 func (plugin *macvlanNetworkPlugin) GetPodNetworkStatus(namespace string, name string, id kubecontainer.ContainerID) (*network.PodNetworkStatus, error) {
 	glog.Infof("GetPodNetworkStatus %v/%v %v", namespace, name, id.ID)
@@ -377,7 +379,6 @@ func generateMacAddr(ipv4 string) (net.HardwareAddr, error) {
 }
 
 func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS, ipv4 net.IP, mask int, ipv4str string, routes []string) (*current.Interface, error) {
-
 	macvlan := &current.Interface{}
 	mode, err := modeFromString(plugin.netconf.Mode)
 	if err != nil {
@@ -451,14 +452,15 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 			return err
 		}
 
-		// add an ip route to the same macvlan network
-		err = netlink.RouteAdd(&netlink.Route{
+		macvlanRoute := netlink.Route{
 			LinkIndex: iface.Attrs().Index,
 			Scope:     netlink.SCOPE_UNIVERSE,
 			Dst:       macvlanNet,
-		})
+		}
+		// add an ip route to the same macvlan network
+		err = netlink.RouteAdd(&macvlanRoute)
 		if err != nil {
-			glog.Errorf("failed to add ethernet route rules: %v", err)
+			glog.Errorf("failed to add route %v: %v", macvlanRoute, err)
 		}
 
 		gateway := ipv4.Mask(ipMask)
@@ -493,21 +495,7 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 	if err != nil {
 		return nil, err
 	}
-	cmd := fmt.Sprintf("nsenter --net=%s -F -- ip -o -4 addr show", netns.Path())
-	glog.Info(cmd)
-	output, _ := exec.New().Command("/bin/sh", "-c", cmd).CombinedOutput()
-	glog.Info(string(output))
 	return macvlan, nil
-}
-
-func (plugin *macvlanNetworkPlugin) cmdAdd(ifname string, netns ns.NetNS, ipv4 net.IP, mask int, ipv4str string, routes []string) error {
-	iface, err := plugin.createMacvlan(ifname, netns, ipv4, mask, ipv4str, routes)
-	if err != nil {
-		glog.Errorf("Failed to create macvlan %v", err)
-		return err
-	}
-	glog.V(6).Infof("interface getted is %v", iface)
-	return nil
 }
 
 func cmdDel(ifname string, netns string) error {
