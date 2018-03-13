@@ -43,10 +43,11 @@ const DefaultPluginName = "kubernetes.io/no-op"
 
 // The consts below are Used for macvlan plugin
 const (
-	MacvlanPluginName = "macvlan"
-	MaskAnnotationKey = "mask"
-	IPAnnotationKey   = "ips"
-	NetworkKey        = "network"
+	MacvlanPluginName   = "macvlan"
+	MaskAnnotationKey   = "mask"
+	RoutesAnnotationKey = "routes"
+	IPAnnotationKey     = "ips"
+	NetworkKey          = "network"
 	// Label for network groups
 	GroupedLabel = "networkgroup"
 )

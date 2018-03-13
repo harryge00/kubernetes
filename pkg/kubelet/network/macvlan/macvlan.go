@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	// TODO: configure gateway?
 	gw          = "66.1.1.254"
 	defaultMask = 16
 	macPrefix   = "02:42"
@@ -241,6 +242,7 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	if err != nil {
 		return fmt.Errorf("Invalid mask annotation %v", annotations[network.MaskAnnotationKey])
 	}
+	routes := strings.Split(annotations[network.RoutesAnnotationKey], ";")
 
 	containerinfo, err := plugin.dclient.InspectContainer(id.ID)
 	if err != nil {
@@ -258,7 +260,7 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	}
 	defer netns.Close()
 
-	err = plugin.cmdAdd(ips[0], netns, parsedIP, gw, mask, ipv4)
+	err = plugin.cmdAdd(ips[0], netns, parsedIP, mask, ipv4, routes)
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
 	}
@@ -374,7 +376,7 @@ func generateMacAddr(ipv4 string) (net.HardwareAddr, error) {
 	return mac, nil
 }
 
-func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS, ipv4 net.IP, gw string, mask int, ipv4str string) (*current.Interface, error) {
+func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS, ipv4 net.IP, mask int, ipv4str string, routes []string) (*current.Interface, error) {
 
 	macvlan := &current.Interface{}
 	mode, err := modeFromString(plugin.netconf.Mode)
@@ -439,56 +441,43 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 			return err
 		}
 
-		netv4 := &net.IPNet{IP: ipv4, Mask: net.CIDRMask(mask, 32)}
+		ipMask := net.CIDRMask(mask, 32)
+		macvlanNet := &net.IPNet{IP: ipv4, Mask: ipMask}
 
-		ipaddr := &netlink.Addr{IPNet: netv4}
+		ipaddr := &netlink.Addr{IPNet: macvlanNet}
 		err = netlink.AddrAdd(iface, ipaddr)
 		if err != nil {
 			glog.Infof("failed to add ipv4 address %v", err)
 			return err
 		}
 
-		// ip route add x.x.x.x/16 dev ethx
+		// add an ip route to the same macvlan network
 		err = netlink.RouteAdd(&netlink.Route{
 			LinkIndex: iface.Attrs().Index,
 			Scope:     netlink.SCOPE_UNIVERSE,
-			Dst:       netv4,
+			Dst:       macvlanNet,
 		})
 		if err != nil {
 			glog.Errorf("failed to add ethernet route rules: %v", err)
 		}
-		// 10.30.99.* is from 1181
-		// Add route to 1199 (172.25.*.*)
-		if strings.HasPrefix(ipv4str, "10.30.99") {
-			dst1199 := &net.IPNet{
-				IP:   plugin.ip1199,
-				Mask: net.CIDRMask(plugin.mask1199, 32),
-			}
-			glog.V(6).Infof("RouteAdd 1199 %v", dst1199.String())
-			err = netlink.RouteAdd(&netlink.Route{
-				LinkIndex: iface.Attrs().Index,
-				Scope:     netlink.SCOPE_UNIVERSE,
-				Dst:       dst1199,
-			})
-			if err != nil {
-				glog.Errorf("Macvlan failed to add 1199 route rules: %v", err)
-			}
-		} else if strings.HasPrefix(ipv4str, "172.25.12") {
-			// 172.25.12.* is from 1199
-			// Add route to 1181 (10.30.99.*)
 
-			dst1181 := &net.IPNet{
-				IP:   plugin.ip1181,
-				Mask: net.CIDRMask(plugin.mask1181, 32),
+		gateway := ipv4.Mask(ipMask)
+		gateway[3]++
+		// Add routes to different macvlan networks
+		for _, route := range routes {
+			_, ipNet, err := net.ParseCIDR(route)
+			if err != nil {
+				glog.Warningf("Failed to parse route %v for %v", route, ipv4)
+				continue
 			}
-			glog.V(6).Infof("RouteAdd 1181 %v", dst1181.String())
 			err = netlink.RouteAdd(&netlink.Route{
 				LinkIndex: iface.Attrs().Index,
 				Scope:     netlink.SCOPE_UNIVERSE,
-				Dst:       dst1181,
+				Dst:       ipNet,
+				Gw:        gateway,
 			})
 			if err != nil {
-				glog.Errorf("Macvlan failed to add 1181 route rules: %v", err)
+				glog.Warningf("Failed to add route %v for %v: %v", route, ipv4, err)
 			}
 		}
 
@@ -511,8 +500,8 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(ifName string, netns ns.NetNS,
 	return macvlan, nil
 }
 
-func (plugin *macvlanNetworkPlugin) cmdAdd(ifname string, netns ns.NetNS, ipv4 net.IP, gw string, mask int, ipv4str string) error {
-	iface, err := plugin.createMacvlan(ifname, netns, ipv4, gw, mask, ipv4str)
+func (plugin *macvlanNetworkPlugin) cmdAdd(ifname string, netns ns.NetNS, ipv4 net.IP, mask int, ipv4str string, routes []string) error {
+	iface, err := plugin.createMacvlan(ifname, netns, ipv4, mask, ipv4str, routes)
 	if err != nil {
 		glog.Errorf("Failed to create macvlan %v", err)
 		return err
