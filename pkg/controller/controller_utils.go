@@ -141,10 +141,11 @@ type IpRelease struct {
 }
 
 type IpResult struct {
-	IP       string `json:"ip,omitempty"`
-	Mask     int    `json:"mask,omitempty"`
-	Occupied int    `json:"occupied,omitempty"`
-	Location string `json:"location,omitempty"`
+	Routes   []string `json:"routes,omitempty"`
+	IP       string   `json:"ip,omitempty"`
+	Mask     int      `json:"mask,omitempty"`
+	Occupied int      `json:"occupied,omitempty"`
+	Location string   `json:"location,omitempty"`
 }
 
 type IpReleaseResp struct {
@@ -160,7 +161,7 @@ func SetIPURL(url, location string) {
 	ipLocation = location
 }
 
-func GetIPMaskForPod(reqBytes []byte) (ip, location string, mask int, httpCode int, err error) {
+func GetIPMaskForPod(reqBytes []byte) (ipResp IpResp, err error) {
 	resp, err := http.Post(getIPURL, "application/json", bytes.NewBuffer(reqBytes))
 	if err != nil {
 		return
@@ -170,19 +171,13 @@ func GetIPMaskForPod(reqBytes []byte) (ip, location string, mask int, httpCode i
 	if err != nil {
 		return
 	}
-	var ipResp IpResp
 	err = json.Unmarshal(body, &ipResp)
 	if err != nil {
 		return
 	}
-	httpCode = ipResp.Code
-	if httpCode != 200 {
+	if ipResp.Code != 200 {
 		err = fmt.Errorf("%v", ipResp.Message)
-		return
 	}
-	ip = ipResp.Result.IP
-	mask = ipResp.Result.Mask
-	location = ipResp.Result.Location
 	return
 }
 
@@ -294,17 +289,16 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 
 	reqBytes, _ := json.Marshal(req)
 
-	var code int
-	var location string
+	var ipResp IpResp
 	// Retry 3 times in case of network error.
 	// TODO: add UUID to ensure idempotence.
 	for i := 0; i < 3; i++ {
-		ip, location, mask, code, err = GetIPMaskForPod(reqBytes)
+		ipResp, err = GetIPMaskForPod(reqBytes)
 		// code = 0 means connection error
 		if err != nil {
 			glog.Errorf("Failed to GetIPMaskForPod %v: %v.  Req: %v", pod.Name, err, req)
 			// If code is 0, network fails so retry.
-			if code != 0 {
+			if ipResp.Code != 0 {
 				return
 			}
 		} else {
@@ -313,8 +307,13 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	ip = ipResp.Result.IP
+	mask = ipResp.Result.Mask
+	location := ipResp.Result.Location
+
 	pod.ObjectMeta.Annotations[network.IPAnnotationKey] = fmt.Sprintf("%s-%s", nets[0], ip)
 	pod.ObjectMeta.Annotations[network.MaskAnnotationKey] = fmt.Sprintf("%s-%d", nets[0], mask)
+	pod.ObjectMeta.Annotations[network.RoutesAnnotationKey] = strings.Join(ipResp.Result.Routes, ";")
 	if location != "" {
 		pod.ObjectMeta.Annotations["location"] = location
 		if pod.Spec.NodeSelector == nil {

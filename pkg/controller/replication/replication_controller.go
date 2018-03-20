@@ -85,7 +85,7 @@ type ReplicationManager struct {
 
 	// Controllers that need to be synced
 	queue    workqueue.RateLimitingInterface
-	recorder *record.EventRecorder
+	recorder record.EventRecorder
 }
 
 // NewReplicationManager configures a replication manager with the specified event recorder
@@ -108,7 +108,7 @@ func NewReplicationManager(podInformer coreinformers.PodInformer, rcInformer cor
 		burstReplicas: burstReplicas,
 		expectations:  controller.NewUIDTrackingControllerExpectations(controller.NewControllerExpectations()),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "replicationmanager"),
-		recorder:      &recorder,
+		recorder:      recorder,
 	}
 
 	rcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
