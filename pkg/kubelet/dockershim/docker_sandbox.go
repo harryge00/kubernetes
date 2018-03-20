@@ -130,10 +130,10 @@ func (ds *dockerService) RunPodSandbox(config *runtimeapi.PodSandboxConfig) (str
 		}
 	}
 
-	macvlanErr := ds.macvlanPlugin.SetUpPod(config.GetMetadata().Namespace, config.GetMetadata().Name, cID, config.Annotations)
-	if macvlanErr != nil {
-		glog.Warningf("Failed to SetUpPod with macvlan ip: %v", macvlanErr)
-	}
+	//macvlanErr := ds.macvlanPlugin.SetUpPod(config.GetMetadata().Namespace, config.GetMetadata().Name, cID, config.Annotations)
+	//if macvlanErr != nil {
+	//	glog.Warningf("Failed to SetUpPod with macvlan ip: %v", macvlanErr)
+	//}
 
 	return createResp.ID, err
 }
@@ -205,11 +205,8 @@ func (ds *dockerService) StopPodSandbox(podSandboxID string) error {
 		if err := ds.networkPlugin.TearDownPod(namespace, name, cID); err != nil {
 			errList = append(errList, err)
 		}
-		// TODO: check if we can simplify the process of tearing down
-		macvlanErr := ds.macvlanPlugin.TearDownPod(namespace, name, cID)
-		if macvlanErr != nil {
-			glog.Warningf("Failed to TearDownPod with macvlan ip: %v", macvlanErr)
-		}
+		// No need to teardown macvlan because the namespace will be removed
+		// when we StopPodSandbox
 	}
 	if err := ds.client.StopContainer(podSandboxID, defaultSandboxGracePeriod); err != nil {
 		glog.Errorf("Failed to stop sandbox %q: %v", podSandboxID, err)
@@ -265,6 +262,7 @@ func (ds *dockerService) getIPFromPlugin(sandbox *dockertypes.ContainerJSON) (st
 	if networkStatus == nil {
 		return "", fmt.Errorf("%v: invalid network status for", msg)
 	}
+
 	return networkStatus.IP.String(), nil
 }
 
