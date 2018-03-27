@@ -334,6 +334,8 @@ type VolumeSource struct {
 	// ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.
 	// +optional
 	ScaleIO *ScaleIOVolumeSource `json:"scaleIO,omitempty" protobuf:"bytes,25,opt,name=scaleIO"`
+	// FCDHC is the DELL version of Fibre Channel resource
+	FCDHC *FCDHCVolumeSource `json:"fcDhc,omitempty" protobuf:"bytes,27,opt,name=fcDhc"`
 }
 
 // PersistentVolumeClaimVolumeSource references the user's PVC in the same namespace.
@@ -425,6 +427,9 @@ type PersistentVolumeSource struct {
 	// ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.
 	// +optional
 	ScaleIO *ScaleIOVolumeSource `json:"scaleIO,omitempty" protobuf:"bytes,19,opt,name=scaleIO"`
+	// FCDHC represents a DELL version of Fibre Channel resource.
+	// +optional
+	FCDHC *FCDHCVolumeSource `json:"fcdhc,omitempty" protobuf:"bytes,20,opt,name=fcdhc"`
 }
 
 const (
@@ -1057,6 +1062,28 @@ type FCVolumeSource struct {
 	TargetWWNs []string `json:"targetWWNs" protobuf:"bytes,1,rep,name=targetWWNs"`
 	// Required: FC target lun number
 	Lun *int32 `json:"lun" protobuf:"varint,2,opt,name=lun"`
+	// Filesystem type to mount.
+	// Must be a filesystem type supported by the host operating system.
+	// Ex. "ext4", "xfs", "ntfs". Implicitly inferred to be "ext4" if unspecified.
+	// TODO: how do we prevent errors in the filesystem from compromising the machine
+	// +optional
+	FSType string `json:"fsType,omitempty" protobuf:"bytes,3,opt,name=fsType"`
+	// Optional: Defaults to false (read/write). ReadOnly here will force
+	// the ReadOnly setting in VolumeMounts.
+	// +optional
+	ReadOnly bool `json:"readOnly,omitempty" protobuf:"varint,4,opt,name=readOnly"`
+}
+
+
+// Represents a Fibre Channel volume.
+// TargetWWNs and Lun should be obtained from the server
+// Fibre Channel volumes can only be mounted as read/write once.
+// Fibre Channel volumes support ownership management and SELinux relabeling.
+type FCDHCVolumeSource struct {
+	// Required: FC target worldwide names (WWNs)
+	Server string `json:"server" protobuf:"bytes,1,rep,name=server"`
+	// Required: FC target lun number
+	VolumeID string `json:"volumeID" protobuf:"varint,2,opt,name=volumeID"`
 	// Filesystem type to mount.
 	// Must be a filesystem type supported by the host operating system.
 	// Ex. "ext4", "xfs", "ntfs". Implicitly inferred to be "ext4" if unspecified.
