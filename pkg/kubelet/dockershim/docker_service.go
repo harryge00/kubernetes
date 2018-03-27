@@ -177,24 +177,22 @@ func NewDockerService(client dockertools.DockerInterface, seccompProfileRoot str
 	}
 	// dockershim currently only supports CNI plugins.
 	cniPlugins := cni.ProbeNetworkPlugins(pluginSettings.PluginConfDir, pluginSettings.PluginBinDir)
-	macPlugins := macvlan.ProbeNetworkPlugins()
 	cniPlugins = append(cniPlugins, kubenet.NewPlugin(pluginSettings.PluginBinDir))
+	macvlanPlug := macvlan.NewPlugin(pluginSettings.PluginConfDir, client)
+	if macvlanPlug != nil {
+		cniPlugins = append(cniPlugins, macvlanPlug)
+	}
 	netHost := &dockerNetworkHost{
 		pluginSettings.LegacyRuntimeHost,
 		&namespaceGetter{ds},
 		&portMappingGetter{ds},
 	}
-	//glog.Infof("let's testing okokok cniPlugins %s , %s %s %s %s", cniPlugins, pluginSettings.PluginName, pluginSettings, pluginSettings.MacvlanPluginConfig, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
-	plug, macvlanPlug, err := network.InitNetworkPlugin(macPlugins, pluginSettings.PluginName, pluginSettings.MacvlanPluginConfig, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
+	plug, err := network.InitNetworkPlugin(cniPlugins, pluginSettings.PluginName, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("didn't find compatible CNI plugin with given settings %+v: %v", pluginSettings, err)
 	}
 	ds.networkPlugin = network.NewPluginManager(plug)
-	ds.macvlanPlugin = network.NewPluginManager(macvlanPlug)
 
-	//ds.networkPlugin = plug
-	//ds.networkPlugin = plug2
-	glog.Infof("Docker cri networking managed by %v", macvlanPlug.Name())
 
 	// NOTE: cgroup driver is only detectable in docker 1.11+
 	cgroupDriver := defaultCgroupDriver
@@ -240,7 +238,6 @@ type dockerService struct {
 	streamingRuntime   *streamingRuntime
 	streamingServer    streaming.Server
 	networkPlugin      *network.PluginManager
-	macvlanPlugin      *network.PluginManager
 	containerManager   cm.ContainerManager
 	// cgroup driver used by Docker runtime.
 	cgroupDriver      string

@@ -22,7 +22,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containernetworking/cni/libcni"
 	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -36,7 +35,6 @@ import (
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
 	utilsysctl "k8s.io/kubernetes/pkg/util/sysctl"
 
-	"sort"
 )
 
 const DefaultPluginName = "kubernetes.io/no-op"
@@ -67,7 +65,7 @@ const (
 type NetworkPlugin interface {
 	// Init initializes the plugin.  This will be called exactly once
 	// before any other methods are called.
-	Init(host Host, hairpinMode componentconfig.HairpinMode, master string, mode string, addr string, nonMasqueradeCIDR string, mtu int) error
+	Init(host Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDR string, mtu int) error
 
 	// Called on various events like:
 	// NET_PLUGIN_EVENT_POD_CIDR_CHANGE
@@ -111,9 +109,6 @@ type PodNetworkStatus struct {
 	//   - service endpoints are constructed with
 	//   - will be reported in the PodStatus.PodIP field (will override the IP reported by docker)
 	IP net.IP `json:"ip" description:"Primary IP address of the pod"`
-
-	// Used for macvlan to release IP
-	Mask int `json:"ipmask,omitempty" description:"Mask of the pod"`
 }
 
 // LegacyHost implements the methods required by network plugins that
@@ -176,56 +171,14 @@ type PortMappingGetter interface {
 }
 
 // InitNetworkPlugin inits the plugin that matches networkPluginName. Plugins must have unique names.
-// TODO: refactor the ugly bullshit code. (PEIQI)
-func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, macvlanPluginFile string, host Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDR string, mtu int) (NetworkPlugin, NetworkPlugin, error) {
-	// If no plugin name specified, return noop and macvlan plugins.
-	// TODO: why return 2 plugins? (BULLSHIT SHI PEIQI)
-	var masterNet, mode, addr string
-	//precise the config file path
-	if macvlanPluginFile == "" {
-		glog.Errorf("Must specify macvlan plugin config file path %v", macvlanPluginFile)
-		masterNet = "ens3"
-		mode = ""
-	} else {
-		files, err := libcni.ConfFiles(macvlanPluginFile)
-		switch {
-		case err != nil:
-			return nil, nil, err
-		case len(files) == 0:
-			return nil, nil, fmt.Errorf("No macvlan network definition found in %s", macvlanPluginFile)
-		}
-		sort.Strings(files)
-		for _, confFile := range files {
-			conf, err := libcni.ConfFromFile(confFile)
-			if err != nil {
-				glog.Warningf("Error loading macvlan config file %s: %v", confFile, err)
-				continue
-			}
-			mode = conf.Network.Type
-			masterNet = conf.Network.Name
-			addr = conf.Network.Server
-		}
-	}
+func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, host Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDR string, mtu int) (NetworkPlugin, error) {
 	if networkPluginName == "" {
-		var macvlanPlugin NetworkPlugin
-		for _, plugin := range plugins {
-			if plugin.Name() == MacvlanPluginName {
-				macvlanPlugin = plugin
-				err := macvlanPlugin.Init(host, hairpinMode, masterNet, mode, addr, nonMasqueradeCIDR, mtu)
-				if err != nil {
-					glog.Warningf("Macvlan plugin failed init: %v", err)
-				} else {
-					glog.Infof("Macvlan plugin initialized")
-				}
-			}
-		}
-
 		// default to the no_op plugin
 		plug := &NoopNetworkPlugin{}
-		if err := plug.Init(host, hairpinMode, "", "", "", nonMasqueradeCIDR, mtu); err != nil {
-			return nil, macvlanPlugin, err
+		if err := plug.Init(host, hairpinMode, nonMasqueradeCIDR, mtu); err != nil {
+			return nil, err
 		}
-		return plug, macvlanPlugin, nil
+		return plug, nil
 	}
 
 	pluginMap := map[string]NetworkPlugin{}
@@ -245,22 +198,9 @@ func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, macvla
 		pluginMap[name] = plugin
 	}
 
-	//to init macvlan plugin
-	macvlanPlugin := pluginMap[MacvlanPluginName]
-	if macvlanPlugin != nil {
-		err := macvlanPlugin.Init(host, hairpinMode, masterNet, mode, addr, nonMasqueradeCIDR, mtu)
-		if err != nil {
-			allErrs = append(allErrs, fmt.Errorf("Macvlan plugin failed init: %v", err))
-		} else {
-			glog.V(6).Infof("Macvlan plugin initialized")
-		}
-	} else {
-		allErrs = append(allErrs, fmt.Errorf("Macvlan plugin not found."))
-	}
-
 	chosenPlugin := pluginMap[networkPluginName]
 	if chosenPlugin != nil {
-		err := chosenPlugin.Init(host, hairpinMode, "", "", "", nonMasqueradeCIDR, mtu)
+		err := chosenPlugin.Init(host, hairpinMode, nonMasqueradeCIDR, mtu)
 		if err != nil {
 			allErrs = append(allErrs, fmt.Errorf("Network plugin %q failed init: %v", networkPluginName, err))
 		} else {
@@ -270,7 +210,7 @@ func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, macvla
 		allErrs = append(allErrs, fmt.Errorf("Network plugin %q not found.", networkPluginName))
 	}
 
-	return chosenPlugin, macvlanPlugin, utilerrors.NewAggregate(allErrs)
+	return chosenPlugin, utilerrors.NewAggregate(allErrs)
 }
 
 func UnescapePluginName(in string) string {
@@ -282,7 +222,7 @@ type NoopNetworkPlugin struct {
 
 const sysctlBridgeCallIPTables = "net/bridge/bridge-nf-call-iptables"
 
-func (plugin *NoopNetworkPlugin) Init(host Host, hairpinMode componentconfig.HairpinMode, master string, mode string, addr string, nonMasqueradeCIDR string, mtu int) error {
+func (plugin *NoopNetworkPlugin) Init(host Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDR string, mtu int) error {
 	// Set bridge-nf-call-iptables=1 to maintain compatibility with older
 	// kubernetes versions to ensure the iptables-based kube proxy functions
 	// correctly.  Other plugins are responsible for setting this correctly
