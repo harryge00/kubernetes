@@ -18,7 +18,11 @@ package fc
 
 import (
 	"fmt"
-
+	"io/ioutil"
+	"path/filepath"
+	"os"
+	"bufio"
+	fmtstrings "strings"
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/api/v1"
@@ -27,6 +31,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/strings"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util"
+	"io"
 )
 
 // This is the primary entrypoint for volume plugins.
@@ -110,13 +115,26 @@ func (plugin *fcPlugin) newMounterInternal(spec *volume.Spec, podUID types.UID, 
 	//}
 	//
 	//lun := strconv.Itoa(int(*fc.Lun))
+	remoteVolumeID := ""
+	if spec.PersistentVolume != nil && spec.PersistentVolume.Spec.FC != nil {
+		remoteVolumeID = spec.PersistentVolume.Spec.FC.RemoteVolumeID
+		glog.V(1).Infof("Try Get RemoteVolumeID from spec.PersistentVolume.Spec.FC: RemoteVolumeID=%v", remoteVolumeID)
+	}
+
+	if remoteVolumeID == "" {
+		remoteVolumeID = spec.Volume.FC.RemoteVolumeID
+		glog.V(1).Infof("Try Get RemoteVolumeID from Spec.Volme: RemoteVolumeID=%v", remoteVolumeID)
+	}
+
+	if remoteVolumeID == "" {
+		return nil, fmt.Errorf("Volume Spec has nil FC.RemoteVolumeID")
+	}
 
 	return &fcDiskMounter{
 		fcDisk: &fcDisk{
 			podUID:  podUID,
 			volName: spec.Name(),
-			//wwns:    fc.TargetWWNs,
-			//lun:     lun,
+			volumeID: remoteVolumeID,
 			manager: manager,
 			io:      &osIOHandler{},
 			plugin:  plugin},
@@ -170,6 +188,7 @@ func (plugin *fcPlugin) ConstructVolumeSpec(volumeName, mountPath string) (*volu
 type fcDisk struct {
 	volName string
 	podUID  types.UID
+	volumeID string
 	portal  string
 	wwns    []string
 	lun     string
@@ -185,6 +204,55 @@ func (fc *fcDisk) GetPath() string {
 	name := fcPluginName
 	// safe to use PodVolumeDir now: volume teardown occurs before pod is cleaned up
 	return fc.plugin.host.GetPodVolumeDir(fc.podUID, strings.EscapeQualifiedNameForDisk(name), fc.volName)
+}
+
+func (fc *fcDisk) GetVolumeIDFilePath() string {
+	return fc.plugin.host.GetPodDir(string(fc.podUID))
+}
+
+func (fc *fcDisk) WriteVolumeIDInPluginDir() error {
+	path := fc.GetVolumeIDFilePath()
+	volumepath := filepath.Join(path, "dellvolumeinfo")
+	glog.V(1).Infof("Write VolumeID: %v To %v", fc.volName, volumepath)
+	_, err := os.Create(volumepath)
+	if err != nil {
+		glog.V(1).Infof("Create VolumeID file failed: %v", err)
+		return fmt.Errorf("Create VolumeID file failed: %v", err)
+	}
+	err = ioutil.WriteFile(volumepath, []byte("volumeID=" + fc.volumeID), 0666)
+	if err != nil {
+		glog.V(1).Infof("Fail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, path, err)
+		return fmt.Errorf("Fail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, path, err)
+	}
+	return nil
+}
+
+func (fc *fcDisk)ReadVolumeIDFromPluginsDir() (string,error) {
+	path := fc.GetVolumeIDFilePath()
+	//if fc.volumeID == "" {
+	//	return "", fmt.Errorf("VolumeID is a empty String, Can't Find Valid Path")
+	//}
+	volumepath := filepath.Join(path, "dellvolumeinfo")
+	f, err := os.Open(volumepath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	reader := bufio.NewReader(f)
+	volumeID, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+
+	sep := fmtstrings.Split(volumeID, "=")
+	if len(sep) != 2 {
+		return "", fmt.Errorf(path + " has bad format, can't parse volumeID")
+	}
+
+	os.Remove(volumepath)
+
+	return sep[1], nil
 }
 
 type fcDiskMounter struct {
@@ -226,6 +294,10 @@ func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
 		glog.Errorf(err.Error())
 		return err
 	}
+	err = b.WriteVolumeIDInPluginDir()
+	if err != nil {
+		glog.Errorf("fc: write volumeID to %v failed", filepath.Join(b.GetVolumeIDFilePath(), "dellvolumeinfo"))
+	}
 	err = diskSetUp(b.manager, *b, dir, b.mounter, fsGroup)
 	if err != nil {
 		glog.Errorf("fc: failed to setup")
@@ -257,13 +329,19 @@ func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 		glog.Warningf("Warning: Unmount skipped because path does not exist: %v", dir)
 		return nil
 	}
-	err := diskTearDown(c.manager, *c, dir, c.mounter)
+	volumeID, err := c.ReadVolumeIDFromPluginsDir()
+	if err != nil {
+		glog.V(1).Infof("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
+	}
+
+	err = diskTearDown(c.manager, *c, dir, c.mounter)
 
 	if err != nil {
 		return err
 	}
 
-	err = Unlock(c.remoteVolumeServerAddress, c.volName, c.podID, c.instanceID)
+	err = Unlock(c.remoteVolumeServerAddress, volumeID, c.podID, c.instanceID)
 	return err
 }
 

@@ -86,3 +86,19 @@ func (adc *PersistentVolumeController) GetSecretFunc() func(namespace, name stri
 		return nil, fmt.Errorf("GetSecret unsupported in PersistentVolumeController")
 	}
 }
+
+func (ctrl *PersistentVolumeController) GetRemoteVolumeServerAddress() string {
+	return ""
+}
+
+func (ctrl *PersistentVolumeController) GetInstanceID() string {
+	return ""
+}
+
+func (kvh *PersistentVolumeController) GetVolumeType() string {
+	return ""
+}
+
+func (kvh *PersistentVolumeController) GetPodDir(podUID string) string {
+	return ""
+}

@@ -9,38 +9,54 @@ import (
 	"bytes"
 	"strconv"
 	"github.com/golang/glog"
-	"strings"
+	//"strings"
+	//"os"
 )
 
 type Volume_Mapping struct {
-	Format		string 		 `json:"format,omitempy"`
+	Format		string 		 `json:"format,omitempty"`
 	Access_Mode     string 		 `json:"access_mode,omitempty"`
 	Path            string		 `json:"path,omitempty"`
 	Instance        string           `json:"instance,omitempty"`
-	Mapping_Misc    string           `json:"mapping_misc,omitempty"`
 }
 
 type FC struct {
-	Lun             int             `json:"lun"`
-	TargerWWNs      []string        `json:"targetWWNs"`
+	Lun             int             `json:"lun,omitempty"`
+	TargetWWNs      []string        `json:"targetWWNs,omitempty"`
 }
 
 type ISCSI struct {
-	IQN		string 		`json:"iqn,omitempy"`
-	Lun 		int		`json:"lun,omitempy"`
-	TargetPortal    string		`json:"targetPortal,omitempy"`
+	IQN		string 		`json:"iqn,omitempty"`
+	Lun 		int		`json:"lun,omitempty"`
+	TargetPortal    string		`json:"targetPortal,omitempty"`
+}
+
+type IscsiMisc struct {
+	Locker string 			`json:"locker,omitempty"`
+	Target []ISCSI			`json:"target,omitempty"`
+}
+
+type FCMisc struct {
+	Locker string			`json:"locker,omitempty"`
+	Lun    int			`json:"lun,omitempty"`
+	TargetWNNs []string     	`json:"targetWWNs,omitempty"`
+}
+
+type ProviderMisc struct {
+	FC    FCMisc                    `json:"fc,omitempty"`
+	Iscsi IscsiMisc			`json:"iscsi,omitempty"`
 }
 
 type VolumeDetails struct {
 	Volid           string 	        `json:"volid,omitempty"`
 	Volume	        string		`json:"volume,omitempty"`
 	Owner           string          `json:"owner,omitempty"`
-	Size            uint64          `json:"size,omitempty"`
-	Used_Size       uint64          `json:"used_size,omitempty"`
+	Size            int          	`json:"size,omitempty"`
+	Used_Size       int          	`json:"used_size,omitempty"`
 	Status          string          `json:"status,omitempty"`
 	Attach_Status   string          `json:"attach_status,omitempty"`
 	Vol_Type        string          `json:"vol_type,omitempty"`
-	Provider_Misc   string          `json:"provider_misc,omitempty"`
+	Provider_Misc   ProviderMisc    `json:"provider_misc,omitempty"`
 	Name 		string 		`json:"name,omitempty"`
 	FC 		FC              `json:"fc,omitempty"`
 	ISCSI           []ISCSI         `json:"iscsi,omitempty"`
@@ -54,14 +70,26 @@ type VolumeInfo struct {
 	Result          VolumeDetails   `json:"result,omitempty"`
 }
 
-func GetVolumeStatus(remoteServerAddress string, volumeName string) (attachedToNode bool, lockedByPod bool, podID string, nodeID string, provider_misc string, err error) {
+
+type AttachResult struct {
+	FC 		FC 		`json:"fc,omitempty"`
+}
+
+type AttachInfo struct {
+	Code 		string 		`json:"code,omitempty"`
+	Message 	string		`json:"message,omitempty"`
+	Name		string 		`json:"name,omitempty"`
+	Result		AttachResult	`json:"result,omitempty"`
+}
+
+func GetVolumeStatus(remoteServerAddress string, volumeID string) (attachedToNode bool, lockedByPod bool, podID string, nodeID string, provider_misc ProviderMisc, err error) {
 	glog.V(1).Info("RemoteAttach/RemoteDetach Try To Get Volume Infomation")
 	httpClient := http.Client{}
 	httpClient.Timeout = 3 * time.Second
-	requestUrl := remoteServerAddress + "/v1/volume/info?volid=" + volumeName
+	requestUrl := remoteServerAddress + "/v1/volume/info?volid=" + volumeID
 	response, err := httpClient.Get(requestUrl)
 	if err != nil {
-		err = fmt.Errorf("Unable To Get Volume: %v Infomation, Error is : %v", volumeName, err)
+		err = fmt.Errorf("Unable To Get Volume: %v Infomation, Error is : %v", volumeID, err)
 		return
 	}
 
@@ -89,18 +117,18 @@ func GetVolumeStatus(remoteServerAddress string, volumeName string) (attachedToN
 		err = fmt.Errorf("Invalid Volume Server Response, status is Invalid, status: %v", data.Result.Status)
 		return
 	}
-	podID = data.Result.Volume_Mapping.Mapping_Misc
+	podID = data.Result.Provider_Misc.FC.Locker
 	nodeID = data.Result.Volume_Mapping.Instance
 	provider_misc = data.Result.Provider_Misc
 	return
 }
 
-func FCAttachToServer(remoteVolumeServerAddress, instanceID, volName string) (lun int, targetWWns []string, err error) {
+func FCAttachToServer(remoteVolumeServerAddress, instanceID, volumeID string) (lun int, targetWWns []string, err error) {
 	glog.V(1).Info("FibreChannel RemoteAttach Begin")
-	glog.V(1).Info("RemoteAttach FibreChannel: " + instanceID + ";" + remoteVolumeServerAddress + ";" + volName)
+	glog.V(1).Info("RemoteAttach FibreChannel: " + instanceID + ";" + remoteVolumeServerAddress + ";" + volumeID)
 	httpClient := http.Client{}
 	httpClient.Timeout = 3 * time.Second
-	requestUrl := remoteVolumeServerAddress + "/v1/volume/attach/" + volName
+	requestUrl := remoteVolumeServerAddress + "/v1/volume/attach/" + volumeID
 	glog.V(1).Info("RemoteAttach FibreChannel URL : " + requestUrl )
 	requestData := "{\"instance\":\"" + instanceID  + "\",\"protocol\":\"FibreChannel\"}"
 	glog.V(1).Info("RemoteAttach FibreChannel Body: " + string(requestData))
@@ -110,10 +138,12 @@ func FCAttachToServer(remoteVolumeServerAddress, instanceID, volName string) (lu
 		return
 	}
 	glog.V(1).Info("RemoteAttach FibreChannel Response : " ,  response.StatusCode, response.Header )
-	var data VolumeInfo
+	var data AttachInfo
 	//var data map[string]interface{}
 	body, _ := ioutil.ReadAll(response.Body)
+	glog.V(1).Infof("RemoteAttach FibreChannel RemoteResponse: %v", string(body))
 	if err = json.Unmarshal(body, &data); err != nil {
+		glog.V(1).Infof("RemoteAttach FibreChannel error: %v", err)
 		return
 	}
 	glog.V(1).Info("RemoteAttach FibreChannel ReturnBody: " , data)
@@ -122,7 +152,19 @@ func FCAttachToServer(remoteVolumeServerAddress, instanceID, volName string) (lu
 		return
 	}
 
-	if data.Result.FC.TargerWWNs == nil {
+	if response.StatusCode == 704 {
+		_, _ , _, _, misc ,err := GetVolumeStatus(remoteVolumeServerAddress, volumeID)
+		if err != nil {
+			glog.V(1).Infof("RemoteAttach FibreChannel: Volume has Already Attached to this Node, but get volume status failed: %v", err)
+			err = fmt.Errorf("RemoteAttach FibreChannel: Volume has Already Attached to this Node, but get volume status failed: %v", err)
+			return lun, targetWWns, err
+		}
+		lun = misc.FC.Lun
+		targetWWns = misc.FC.TargetWNNs
+		return lun, targetWWns, err
+	}
+
+	if data.Result.FC.TargetWWNs == nil {
 		err = fmt.Errorf("RemoteAttach FibreChannel ReturnBody Invalid: targetWWNs is nil!")
 		return
 	}
@@ -132,7 +174,7 @@ func FCAttachToServer(remoteVolumeServerAddress, instanceID, volName string) (lu
 		err = fmt.Errorf("RemoteAttach FibreChannel ReturnBody Invalid: lun < 0 ")
 		return
 	}
-	targetWWns = data.Result.FC.TargerWWNs
+	targetWWns = data.Result.FC.TargetWWNs
 	if len(targetWWns) == 0 {
 		err = fmt.Errorf("RemoteAttach FibreChannel ReturnBody Invalid: len(targetWWns) == 0 ")
 		return
@@ -142,13 +184,13 @@ func FCAttachToServer(remoteVolumeServerAddress, instanceID, volName string) (lu
 	return lun, targetWWns , nil
 }
 
-func LockToPod(remoteVolumeServerAddress, volName, podID string) error {
+func LockToPod(remoteVolumeServerAddress, volumeID, podID string) error {
 	glog.V(1).Info("FibreChannel LockToPod Begin")
-	glog.V(1).Info("FibreChannel LockToPod Infomation: PodID=%v VolumeServer=%v VolumeID=%v", podID, remoteVolumeServerAddress, volName)
+	glog.V(1).Info("FibreChannel LockToPod Infomation: PodID=%v VolumeServer=%v VolumeID=%v", podID, remoteVolumeServerAddress, volumeID)
 	httpClient := http.Client{}
 	httpClient.Timeout = 3 * time.Second
 	requestUrl := remoteVolumeServerAddress + "/v1/volume/lock"
-	requestData := "{\"id\":\"" + volName  + "\",\"locker\":\"" + podID + "\"}"
+	requestData := "{\"id\":\"" + volumeID  + "\",\"locker\":\"" + podID + "\"}"
 	glog.V(1).Info("FibreChannel LockToPod RequestInfo: %v", requestData)
 	response, err := httpClient.Post(requestUrl,"application/json", bytes.NewReader([]byte(requestData)))
 	if err != nil {
@@ -157,19 +199,19 @@ func LockToPod(remoteVolumeServerAddress, volName, podID string) error {
 
 	if response.StatusCode != 200 {
 		glog.V(1).Info("FibreChannel LockToPod Failed: %v", requestData)
-		return fmt.Errorf("VolumeID=%v PodID=%v LockToPod Failed", volName, podID)
+		return fmt.Errorf("VolumeID=%v PodID=%v LockToPod Failed", volumeID, podID)
 	}
 	glog.V(1).Info("FibreChannel LockToPod Success, VolumeID=%v", requestData)
 	return nil
 }
 
 
-func DetachFromServer(remoteVolumeServerAddress, instanceID, volName string) error {
+func DetachFromServer(remoteVolumeServerAddress, instanceID, volumeID string) error {
 	glog.V(1).Info("FibreChannel RemoteDetach Begin")
-	glog.V(1).Info("FibreChannel RemoteDetach FibreChannel: " + instanceID + ";" + remoteVolumeServerAddress + ";" + volName)
+	glog.V(1).Info("FibreChannel RemoteDetach FibreChannel: " + instanceID + ";" + remoteVolumeServerAddress + ";" + volumeID)
 	httpClient := http.Client{}
 	httpClient.Timeout = 3 * time.Second
-	requestUrl := remoteVolumeServerAddress + "/v1/volume/detach/" + volName
+	requestUrl := remoteVolumeServerAddress + "/v1/volume/detach/" + volumeID
 	response, err := httpClient.Post(requestUrl,"application/json", bytes.NewReader([]byte("")))
 	if err != nil {
 		return err
@@ -180,19 +222,19 @@ func DetachFromServer(remoteVolumeServerAddress, instanceID, volName string) err
 		return err
 	}
 	glog.V(1).Info("Dell RemoteDetach ReturnBody: " , data)
-	if response.StatusCode != 200 && response.StatusCode != 705 {
+	if response.StatusCode != 200 {
 		return fmt.Errorf(data.Message)
 	}
 	glog.V(1).Info("Dell RemoteDetach Success")
 	return nil
 }
 
-func UnlockFromPod(remoteVolumeServerAddress, volName, podID string) error {
-	glog.V(1).Info("FibreChannel UnlockFromPod Begin: VolumeID=%v PodID=%v", volName, podID)
+func UnlockFromPod(remoteVolumeServerAddress, volumeID, podID string) error {
+	glog.V(1).Info("FibreChannel UnlockFromPod Begin: VolumeID=%v PodID=%v", volumeID, podID)
 	httpClient := http.Client{}
 	httpClient.Timeout = 3 * time.Second
 	requestUrl := remoteVolumeServerAddress + "/v1/volume/unlock"
-	requestData := "{\"id\":\"" + volName  + "\",\"locker\":\"" + podID + "\"}"
+	requestData := "{\"id\":\"" + volumeID  + "\",\"locker\":\"" + podID + "\"}"
 	glog.V(1).Info("FibreChannel UnlockFromPod RequestContent: %v", requestData)
 	response, err := httpClient.Post(requestUrl,"application/json", bytes.NewReader([]byte(requestData)))
 	if err != nil {
@@ -202,24 +244,24 @@ func UnlockFromPod(remoteVolumeServerAddress, volName, podID string) error {
 
 	if response.StatusCode != 200 {
 		glog.V(1).Info("FibreChannel UnlockFromPod Failed, RemoteServer Refuse")
-		return fmt.Errorf("FibreChannel Unlock volume %v from pod: %v failed", volName, podID)
+		return fmt.Errorf("FibreChannel Unlock volume %v from pod: %v failed", volumeID, podID)
 	}
 	glog.V(1).Info("FibreChannel UnlockFromPod Success")
 	return nil
 }
 
 //two Phase: 1. Unmap To Server; 2. Unlock from Pod
-func Unlock(remoteVolumeServerAddress, volName, podID, instanceID string) error {
+func Unlock(remoteVolumeServerAddress, volumeID, podID, instanceID string) error {
 	glog.V(1).Info("FibreChannel Unlock Begin")
 	glog.V(1).Info("FibreChannel Unlock, Try to UnlockFromPod Begin")
-	err := UnlockFromPod(remoteVolumeServerAddress, volName, podID)
+	err := UnlockFromPod(remoteVolumeServerAddress, volumeID, podID)
 	if err != nil {
 		glog.V(1).Info("FibreChannel Unlock, UnlockFromPod Failed: %v", err)
 		return err
 	}
 
 	glog.V(1).Info("FibreChannel Unlock, Try to RemoteDetach from Server")
-	err = DetachFromServer(remoteVolumeServerAddress, instanceID, volName)
+	err = DetachFromServer(remoteVolumeServerAddress, instanceID, volumeID)
 	if err != nil {
 		glog.V(1).Info("FibreChannel Unlock, RemoteDetach Failed: %v", err)
 		return err
@@ -227,15 +269,11 @@ func Unlock(remoteVolumeServerAddress, volName, podID, instanceID string) error 
 	return nil
 }
 
-// If volume is not belong to Node and Pod, MapTo Node and LockTo Pod
-// If volume is not belong to Node but belong to this Pod, Just MapTo this Node
-// If volume is belong to this Node but not belong to this Pod, Return Fail
-// If volume is belong to Node and belong to this Pod, Return Success
-// If volume is not belong to Any pod, LockTo this Pod,Return Success
-// If volume is not belong to Any Node, but Not belong to this Pod, return Fail
+
 func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 	glog.V(1).Info("FibreChannel Lock Volume Begin")
-	_, _, podID, nodeID, provide_misc,  err := GetVolumeStatus(b.remoteVolumeServerAddress, b.volName)
+	glog.V(1).Infof("FibreChannel Lock Volume Begin: InstanceID=%v VolumeID=%v", b.instanceID, b.volumeID)
+	_, _, podID, nodeID, provide_misc,  err := GetVolumeStatus(b.remoteVolumeServerAddress, b.volumeID)
 	if err != nil {
 		glog.V(1).Info("FibreChannel Lock Volume Failed,Cause We Can't Get Information")
 		return false,fmt.Errorf("FibreChannel Get Volume Info Error: %v",err)
@@ -244,7 +282,7 @@ func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 	if nodeID == "" {
 		if podID == "" {
 			glog.V(1).Info("FibreChannel Try To RemoteAttach")
-			lun, targetWWns, err := FCAttachToServer(b.remoteVolumeServerAddress,b.instanceID, b.volName)
+			lun, targetWWns, err := FCAttachToServer(b.remoteVolumeServerAddress,b.instanceID, b.volumeID)
 			if err != nil {
 				glog.V(1).Info("FibreChannel RemoteAttach Failed %v", err)
 				return false, err
@@ -253,7 +291,7 @@ func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 			b.fcDisk.lun = strconv.Itoa(lun)
 			b.fcDisk.wwns = targetWWns
 			glog.V(1).Info("FibreChannel Try To LockToPod")
-			err = LockToPod(b.remoteVolumeServerAddress, b.volName, b.podID)
+			err = LockToPod(b.remoteVolumeServerAddress, b.volumeID, b.podID)
 			if err != nil {
 				glog.V(1).Info("FibreChannel LockToPod Failed")
 				return false, err
@@ -265,12 +303,12 @@ func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 	} else if nodeID != b.instanceID {
 		if podID == "" {
 			glog.V(1).Info("FibreChannel Try To RemoteDetach From Node: " + nodeID)
-			err := DetachFromServer(b.remoteVolumeServerAddress, nodeID, b.volName)
+			err := DetachFromServer(b.remoteVolumeServerAddress, nodeID, b.volumeID)
 			if err != nil {
 				return false, fmt.Errorf("FibreChannel Volume belong to Node: %v, but not belong to Any Pod,We try release it then MapTo %v,Meet Error: %v", nodeID, b.instanceID, err)
 			}
 			glog.V(1).Info("FibreChannel Try To RemoteAttach")
-			lun, targetWWns, err := FCAttachToServer(b.remoteVolumeServerAddress,b.instanceID, b.volName)
+			lun, targetWWns, err := FCAttachToServer(b.remoteVolumeServerAddress,b.instanceID, b.volumeID)
 			if err != nil {
 				glog.V(1).Info("FibreChannel RemoteAttach Failed %v", err)
 				return false, err
@@ -279,7 +317,7 @@ func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 			b.fcDisk.lun = strconv.Itoa(lun)
 			b.fcDisk.wwns = targetWWns
 			glog.V(1).Info("FibreChannel Try To LockToPod")
-			err = LockToPod(b.remoteVolumeServerAddress, b.volName, b.podID)
+			err = LockToPod(b.remoteVolumeServerAddress, b.volumeID, b.podID)
 			if err != nil {
 				glog.V(1).Info("FibreChannel LockToPod Failed")
 				return false, err
@@ -289,13 +327,13 @@ func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 			return false, fmt.Errorf("FibreChannel Already Locked by another Pod: %v", podID)
 		} else {
 			// pod transfer to another node
-			err := Unlock(b.remoteVolumeServerAddress, b.volName, b.podID , nodeID)
+			err := Unlock(b.remoteVolumeServerAddress, b.volumeID, b.podID , nodeID)
 			if err != nil {
 				return true, fmt.Errorf("FibreChannel Volume belong to Another Node, but belong to this Pod, Try Unlock Volume ,But Meet Error: %v", err)
 			}
 
 			glog.V(1).Info("FibreChannel Try To RemoteAttach")
-			lun, targetWWns, err := FCAttachToServer(b.remoteVolumeServerAddress,b.instanceID, b.volName)
+			lun, targetWWns, err := FCAttachToServer(b.remoteVolumeServerAddress,b.instanceID, b.volumeID)
 			if err != nil {
 				glog.V(1).Info("FibreChannel RemoteAttach Failed %v", err)
 				return false, err
@@ -304,7 +342,7 @@ func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 			b.fcDisk.lun = strconv.Itoa(lun)
 			b.fcDisk.wwns = targetWWns
 			glog.V(1).Info("FibreChannel Try To LockToPod")
-			err = LockToPod(b.remoteVolumeServerAddress, b.volName, b.podID)
+			err = LockToPod(b.remoteVolumeServerAddress, b.volumeID, b.podID)
 			if err != nil {
 				glog.V(1).Info("FibreChannel LockToPod Failed")
 				return false, err
@@ -314,12 +352,12 @@ func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 	} else {
 		if podID == "" {
 			glog.V(1).Info("FibreChannel Try To RemoteDetach From Node: " + nodeID)
-			err := DetachFromServer(b.remoteVolumeServerAddress, nodeID, b.volName)
+			err := DetachFromServer(b.remoteVolumeServerAddress, nodeID, b.volumeID)
 			if err != nil {
 				return false, fmt.Errorf("FibreChannel Volume belong to Node: %v, but not belong to Any Pod,We try release it then MapTo %v,Meet Error: %v", nodeID, b.instanceID, err)
 			}
 			glog.V(1).Info("FibreChannel Try To RemoteAttach")
-			lun, targetWWns, err := FCAttachToServer(b.remoteVolumeServerAddress,b.instanceID, b.volName)
+			lun, targetWWns, err := FCAttachToServer(b.remoteVolumeServerAddress,b.instanceID, b.volumeID)
 			if err != nil {
 				glog.V(1).Info("FibreChannel RemoteAttach Failed %v", err)
 				return false, err
@@ -328,23 +366,18 @@ func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 			b.fcDisk.lun = strconv.Itoa(lun)
 			b.fcDisk.wwns = targetWWns
 			glog.V(1).Info("FibreChannel Try To LockToPod")
-			err = LockToPod(b.remoteVolumeServerAddress, b.volName, b.podID)
+			err = LockToPod(b.remoteVolumeServerAddress, b.volumeID, b.podID)
 			if err != nil {
 				glog.V(1).Info("FibreChannel LockToPod Failed")
 				return false, err
 			}
 			return true, nil
 		} else if podID == b.podID {
-			if strings.HasPrefix(provide_misc, "fc" ) {
-				sep := strings.Split(provide_misc,"|")
-				if len(sep) != 3 {
-					return false, fmt.Errorf("FibreChannel RemoteAttach Failed: Invalid Provider_Misc : %s", provide_misc)
-				} else {
-					wwns := strings.Split(sep[1], ",")
-					b.fcDisk.lun = sep[2]
-					b.fcDisk.wwns = wwns
-					return true, nil
-				}
+			if provide_misc.FC.Locker != "" {
+				b.fcDisk.lun = strconv.Itoa(provide_misc.FC.Lun)
+				b.fcDisk.wwns = provide_misc.FC.TargetWNNs
+				return true, nil
+
 			} else {
 				return false, fmt.Errorf("FibreChannel RemoteAttach Failed: Invalid Provider_Misc, Can't get wwns,lun")
 			}

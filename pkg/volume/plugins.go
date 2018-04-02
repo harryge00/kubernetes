@@ -239,6 +239,8 @@ type VolumeHost interface {
 	GetInstanceID() string
 
 	GetVolumeType() string
+
+	GetPodDir(string) string
 }
 
 // VolumePluginMgr tracks registered plugins.

@@ -152,3 +152,7 @@ func (kvh *kubeletVolumeHost) GetInstanceID() string {
 func (kvh *kubeletVolumeHost) GetVolumeType() string {
 	return kvh.kubelet.diskType
 }
+
+func (kvh *kubeletVolumeHost) GetPodDir(podUID string) string {
+	return kvh.kubelet.getPodDir(types.UID(podUID))
+}

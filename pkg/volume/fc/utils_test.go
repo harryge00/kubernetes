@@ -24,30 +24,8 @@ func Test1(t *testing.T) {
 	                 }
 	       }`
 
-	a2 := `{
-		"code":"200",
-		"message":"OK",
-		"result":{
-			        "volid":"bbb749b7-9062-4f8a-b518-dc837bc15ef7",
-				"volume":"fc",
-				"owner":"32556",
-				"size":25,
-				"used_size":10,
-				"status":"idle",
-				"attach_status":"attached",
-				"vol_type":"dellsc",
-				"provider_misc":"",
-				"create_time":"2018-03-20 14:44:19",
-				"update_time":"2018-03-26 10:13:35",
-				"volume_mapping":{
-					"format":"ext4",
-					"access_mode":"ReadWriteOnce",
-					"path":null,
-					"instance":"10.6.5.205",
-					"mapping_misc": "xxx"
-				}
-			}
-		}`
+	a2 := `{"code":"200","message":"OK","result":{"attach_status":"attached","create_time":"2018-03-30 16:43:20","owner":"3256","provider_misc":{"fc":{"locker":"751964cd-3656-11e8-96a4-0cc47ab1f7be","lun":2,"targetWWNs":["5000d31000d88231","5000d31000d88232","5000d31000d88234","5000d31000d88233"]}},"size":5,"status":"busy",
+"update_time":"2018-04-02 17:30:57","used_size":7,"vol_type":"dellsc","volid":"27d0e31c-16d6-40a0-ba8d-0df1c4f51cab","volume":"volume3","volume_mapping":{"access_mode":"ReadWriteOnce","format":"ext4","instance":"10.6.5.205","path":""}}}`
 
 	result1 := VolumeInfo{}
 	result2 := VolumeInfo{}
@@ -55,10 +33,14 @@ func Test1(t *testing.T) {
 	json.Unmarshal([]byte(a1), &result1)
 	fmt.Println(string(strconv.Itoa(result1.Result.FC.Lun)))
 
-	json.Unmarshal([]byte(a2), &result2)
-	fmt.Println(result2)
-	fmt.Println(result2.Result)
-	fmt.Println(result2.Result.Status, result2.Result.Attach_Status)
+	err := json.Unmarshal([]byte(a2), &result2)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	//fmt.Println(result2)
+	//fmt.Println(result2.Result)
+	//fmt.Println(result2.Result.Status, result2.Result.Attach_Status)
+	fmt.Println(result2.Result.Status, result2.Result.Provider_Misc.FC)
 }
 
 func TestLockToPod(t *testing.T) {
@@ -325,34 +307,35 @@ func TestFCRemoteAttach(t *testing.T) {
 	volumeName2 := "bbbbbb"
 	volumeName3 := "cccccc"
 	volumeName4 := "dddddd"
+	volumeName5 := "eeeeee"
 	testHttpServce := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
 		if r.Method != "POST" {
 			w.WriteHeader(400)
 		}
 		if r.RequestURI == ("/v1/volume/attach/" + volumeName1 ){
-			var data VolumeInfo
+			var data AttachInfo
 			data.Code = "200"
 			data.Message = "OK"
 			data.Result.FC.Lun = 1
-			data.Result.FC.TargerWWNs = []string{"5000d31000d88233","5000d31000d88232","5000d31000d88234","5000d31000d88231"}
+			data.Result.FC.TargetWWNs = []string{"5000d31000d88233","5000d31000d88232","5000d31000d88234","5000d31000d88231"}
 			body,_ := json.Marshal(data)
 			w.Write(body)
 			w.WriteHeader(200)
 			return
 		}
 		if r.RequestURI == ("/v1/volume/attach/" + volumeName4 ){
-			var data VolumeInfo
+			var data AttachInfo
 			data.Code = "200"
 			data.Message = "OK"
 			data.Result.FC.Lun = -1
-			data.Result.FC.TargerWWNs = []string{"5000d31000d88233","5000d31000d88232","5000d31000d88234","5000d31000d88231"}
+			data.Result.FC.TargetWWNs = []string{"5000d31000d88233","5000d31000d88232","5000d31000d88234","5000d31000d88231"}
 			body,_ := json.Marshal(data)
 			w.Write(body)
 			w.WriteHeader(200)
 			return
 		}
 		if r.RequestURI == ("/v1/volume/attach/" + volumeName2 ){
-			var data VolumeInfo
+			var data AttachInfo
 			data.Code = "433"
 			data.Message = "{\"result\":\"StorageCenterError - Exception Message: Error creating a Mapping Profile: Server already mapped to volume\"}"
 			body,_ := json.Marshal(data)
@@ -362,11 +345,17 @@ func TestFCRemoteAttach(t *testing.T) {
 		}
 		if r.RequestURI == ("/v1/volume/attach/" + volumeName3 ){
 			time.Sleep(10 * time.Second)
-			var data VolumeInfo
+			var data AttachInfo
 			data.Code = "433"
 			data.Message = "{\"result\":\"StorageCenterError - Exception Message: Error creating a Mapping Profile: Server already mapped to volume\"}"
 			body,_ := json.Marshal(data)
 			w.Write(body)
+			w.WriteHeader(200)
+			return
+		}
+		if r.RequestURI == ("/v1/volume/attach/" + volumeName5) {
+			respData := `{"code":"200","message":"OK","result":{"fc":{"lun":1,"targetWWNs":["5000d31000d8822e","5000d31000d8822d","5000d31000d88230","5000d31000d8822f"]},"name":"355224f7-1074-445d-8ba4-e71988fec8da"}}`
+			w.Write([]byte(respData))
 			w.WriteHeader(200)
 			return
 		}
@@ -401,6 +390,14 @@ func TestFCRemoteAttach(t *testing.T) {
 	if err == nil {
 		t.Fatal("volume ddddddd should fail")
 	}
+
+	volName1 := volumeName5
+	instanceID1 := "eeeeee"
+	_, _, err1 := FCAttachToServer(remoteVolumeServerAddress, volName1, instanceID1)
+	if err1 != nil {
+		fmt.Println(err1.Error())
+		t.Fatal("volume ddddddd should succeed")
+	}
 }
 
 func TestRemoteDetach(t *testing.T) {
@@ -416,7 +413,7 @@ func TestRemoteDetach(t *testing.T) {
 			res.Code = "200"
 			res.Message = "OK"
 			res.Result.FC.Lun = 1
-			res.Result.FC.TargerWWNs = []string{"5000d31000d88233","5000d31000d88232","5000d31000d88234","5000d31000d88231"}
+			res.Result.FC.TargetWWNs = []string{"5000d31000d88233","5000d31000d88232","5000d31000d88234","5000d31000d88231"}
 			res.Result.Name = "aaaaaa"
 			body,_ := json.Marshal(res)
 			w.Write(body)

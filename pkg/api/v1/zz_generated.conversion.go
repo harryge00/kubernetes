@@ -1481,6 +1481,7 @@ func autoConvert_v1_FCVolumeSource_To_api_FCVolumeSource(in *FCVolumeSource, out
 	out.Lun = (*int32)(unsafe.Pointer(in.Lun))
 	out.FSType = in.FSType
 	out.ReadOnly = in.ReadOnly
+	out.RemoteVolumeID = in.RemoteVolumeID
 	return nil
 }
 
@@ -1497,6 +1498,7 @@ func autoConvert_api_FCVolumeSource_To_v1_FCVolumeSource(in *api.FCVolumeSource,
 	out.Lun = (*int32)(unsafe.Pointer(in.Lun))
 	out.FSType = in.FSType
 	out.ReadOnly = in.ReadOnly
+	out.RemoteVolumeID = in.RemoteVolumeID
 	return nil
 }
 
