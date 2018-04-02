@@ -18,7 +18,6 @@ package fc
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/types"
@@ -106,24 +105,28 @@ func (plugin *fcPlugin) newMounterInternal(spec *volume.Spec, podUID types.UID, 
 		return nil, err
 	}
 
-	if fc.Lun == nil {
-		return nil, fmt.Errorf("empty lun")
-	}
-
-	lun := strconv.Itoa(int(*fc.Lun))
+	//if fc.Lun == nil {
+	//	return nil, fmt.Errorf("empty lun")
+	//}
+	//
+	//lun := strconv.Itoa(int(*fc.Lun))
 
 	return &fcDiskMounter{
 		fcDisk: &fcDisk{
 			podUID:  podUID,
 			volName: spec.Name(),
-			wwns:    fc.TargetWWNs,
-			lun:     lun,
+			//wwns:    fc.TargetWWNs,
+			//lun:     lun,
 			manager: manager,
 			io:      &osIOHandler{},
 			plugin:  plugin},
 		fsType:   fc.FSType,
 		readOnly: readOnly,
 		mounter:  &mount.SafeFormatAndMount{Interface: mounter, Runner: exec.New()},
+		remoteVolumeServerAddress:	plugin.host.GetRemoteVolumeServerAddress(),
+		instanceID:			plugin.host.GetInstanceID(),
+		podID:				string(podUID),
+		volumeType:                     plugin.host.GetVolumeType(),
 	}, nil
 }
 
@@ -142,6 +145,10 @@ func (plugin *fcPlugin) newUnmounterInternal(volName string, podUID types.UID, m
 			io:      &osIOHandler{},
 		},
 		mounter: mounter,
+		remoteVolumeServerAddress: plugin.host.GetRemoteVolumeServerAddress(),
+		instanceID: plugin.host.GetInstanceID(),
+		podID:	    string(podUID),
+		volumeType: plugin.host.GetVolumeType(),
 	}, nil
 }
 
@@ -184,6 +191,10 @@ type fcDiskMounter struct {
 	*fcDisk
 	readOnly bool
 	fsType   string
+	remoteVolumeServerAddress string
+	instanceID	string
+	volumeType      string
+	podID		string
 	mounter  *mount.SafeFormatAndMount
 }
 
@@ -210,7 +221,12 @@ func (b *fcDiskMounter) SetUp(fsGroup *int64) error {
 
 func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
 	// diskSetUp checks mountpoints and prevent repeated calls
-	err := diskSetUp(b.manager, *b, dir, b.mounter, fsGroup)
+	_, err := Lock(b)
+	if err != nil {
+		glog.Errorf(err.Error())
+		return err
+	}
+	err = diskSetUp(b.manager, *b, dir, b.mounter, fsGroup)
 	if err != nil {
 		glog.Errorf("fc: failed to setup")
 	}
@@ -220,6 +236,10 @@ func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
 type fcDiskUnmounter struct {
 	*fcDisk
 	mounter mount.Interface
+	remoteVolumeServerAddress string
+	instanceID	string
+	volumeType      string
+	podID		string
 }
 
 var _ volume.Unmounter = &fcDiskUnmounter{}
@@ -237,7 +257,14 @@ func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 		glog.Warningf("Warning: Unmount skipped because path does not exist: %v", dir)
 		return nil
 	}
-	return diskTearDown(c.manager, *c, dir, c.mounter)
+	err := diskTearDown(c.manager, *c, dir, c.mounter)
+
+	if err != nil {
+		return err
+	}
+
+	err = Unlock(c.remoteVolumeServerAddress, c.volName, c.podID, c.instanceID)
+	return err
 }
 
 func getVolumeSource(spec *volume.Spec) (*v1.FCVolumeSource, bool, error) {

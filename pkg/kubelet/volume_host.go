@@ -140,3 +140,15 @@ func (kvh *kubeletVolumeHost) GetNodeAllocatable() (v1.ResourceList, error) {
 func (kvh *kubeletVolumeHost) GetSecretFunc() func(namespace, name string) (*v1.Secret, error) {
 	return kvh.secretManager.GetSecret
 }
+
+func (kvh *kubeletVolumeHost) GetRemoteVolumeServerAddress() string {
+	return kvh.kubelet.remoteVolumeServerAddr
+}
+
+func (kvh *kubeletVolumeHost) GetInstanceID() string {
+	return kvh.kubelet.instandID
+}
+
+func (kvh *kubeletVolumeHost) GetVolumeType() string {
+	return kvh.kubelet.diskType
+}

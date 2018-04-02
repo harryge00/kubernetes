@@ -501,6 +501,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		iptablesDropBit:                         int(kubeCfg.IPTablesDropBit),
 		experimentalHostUserNamespaceDefaulting: utilfeature.DefaultFeatureGate.Enabled(features.ExperimentalHostUserNamespaceDefaultingGate),
 		sampleWindow:                            int32(kubeCfg.SampleWindow),
+		remoteVolumeServerAddr:  kubeCfg.RemoteVolumeServerAddr,
 	}
 
 	secretManager := secret.NewCachingSecretManager(
@@ -1157,6 +1158,12 @@ type Kubelet struct {
 	//TODO(wangzhuzhen): need use this to set the size of  ServiceProbe data to keeping
 	// samplewindow indicate the number of latest sample result of ServiceProbe (workLoad) to remained
 	sampleWindow int32
+
+	instandID	string
+
+	diskType        string
+
+	remoteVolumeServerAddr string
 }
 
 /*
