@@ -18,7 +18,7 @@ package fc
 
 import (
 	"fmt"
-	"io/ioutil"
+	//"io/ioutil"
 	"path/filepath"
 	"os"
 	"bufio"
@@ -205,28 +205,34 @@ func (fc *fcDisk) GetVolumeIDFilePath() string {
 	return fc.plugin.host.GetPodDir(string(fc.podUID))
 }
 
-func (fc *fcDisk) WriteVolumeIDInPluginDir() error {
-	path := fc.GetVolumeIDFilePath()
-	volumepath := filepath.Join(path, "dellvolumeinfo")
+func (fc *fcDisk) WriteVolumeIDInPluginDir(rootpath string) error {
+	//rootpath := fc.GetVolumeIDFilePath()
+	volumepath := filepath.Join(rootpath, "dellvolumeinfo")
 	glog.V(1).Infof("Write VolumeID: %v To %v", fc.volName, volumepath)
-	_, err := os.Create(volumepath)
+
+	_, err := os.Stat(volumepath)
 	if err != nil {
-		glog.V(1).Infof("Create VolumeID file failed: %v", err)
-		return fmt.Errorf("Create VolumeID file failed: %v", err)
+		_, err = os.Create(volumepath)
+		if err != nil {
+			glog.V(1).Infof("Create VolumeID file failed: %v", err)
+			return fmt.Errorf("Create VolumeID file failed: %v", err)
+		}
 	}
-	err = ioutil.WriteFile(volumepath, []byte("volumeID=" + fc.volumeID), 0666)
+	f , err := os.OpenFile(volumepath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
-		glog.V(1).Infof("Fail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, path, err)
-		return fmt.Errorf("Fail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, path, err)
+		return err
+	}
+	defer f.Close()
+
+	f.WriteString(fc.volName + "=" + fc.volumeID + "\n")
+	if err != nil {
+		glog.V(1).Infof("Fail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, volumepath, err)
+		return fmt.Errorf("Fail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, volumepath, err)
 	}
 	return nil
 }
 
-func (fc *fcDisk) ReadVolumeIDFromPluginsDir() (string,error) {
-	path := fc.GetVolumeIDFilePath()
-	//if fc.volumeID == "" {
-	//	return "", fmt.Errorf("VolumeID is a empty String, Can't Find Valid Path")
-	//}
+func (fc *fcDisk) ReadVolumeIDFromPluginsDir(path string) (string,error) {
 	volumepath := filepath.Join(path, "dellvolumeinfo")
 	f, err := os.Open(volumepath)
 	if err != nil {
@@ -235,19 +241,34 @@ func (fc *fcDisk) ReadVolumeIDFromPluginsDir() (string,error) {
 	defer f.Close()
 
 	reader := bufio.NewReader(f)
-	volumeID, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return "", err
+
+	for  {
+		volumeID, err := reader.ReadString('\n')
+		if volumeID != "" {
+			volumeID = fmtstrings.TrimRight(volumeID, "\n")
+		}
+		if err != nil {
+			if err != io.EOF  {
+				sep := fmtstrings.Split(volumeID, "=")
+				volumeID = fmtstrings.TrimSuffix(volumeID, "\n")
+				if len(sep) != 2 {
+					return "", fmt.Errorf(volumepath + " has bad format, can't parse volumeID")
+				}
+				if sep[0] == fc.volName {
+					return sep[1], nil
+				}
+			}
+		}
+		sep := fmtstrings.Split(volumeID, "=")
+		if len(sep) != 2 {
+			return "", fmt.Errorf(path + " has bad format, can't parse volumeID")
+		}
+		if sep[0] == fc.volName {
+			return sep[1], nil
+		}
 	}
 
-	sep := fmtstrings.Split(volumeID, "=")
-	if len(sep) != 2 {
-		return "", fmt.Errorf(path + " has bad format, can't parse volumeID")
-	}
-
-	os.Remove(volumepath)
-
-	return sep[1], nil
+	return "", fmt.Errorf("Not Found")
 }
 
 type fcDiskMounter struct {
@@ -290,7 +311,7 @@ func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
 		glog.Errorf(err.Error())
 		return err
 	}
-	err = b.WriteVolumeIDInPluginDir()
+	err = b.WriteVolumeIDInPluginDir(b.GetVolumeIDFilePath())
 	if err != nil {
 		glog.Infof("Try to WriteVolumeIDInPluginDir(%v), because of %v. So we try to unlock this volume, exit from SetUpAt()", b.volumeID, err)
 		err1 := b.UnlockWhenSetupFailed()
@@ -362,7 +383,7 @@ func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 		glog.Warningf("Warning: Unmount skipped because path does not exist: %v", dir)
 		return nil
 	}
-	volumeID, err := c.ReadVolumeIDFromPluginsDir()
+	volumeID, err := c.ReadVolumeIDFromPluginsDir(c.GetVolumeIDFilePath())
 	if err != nil {
 		glog.V(1).Infof("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
 		glog.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
