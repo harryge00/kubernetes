@@ -117,7 +117,9 @@ func (plugin *fcPlugin) newMounterInternal(spec *volume.Spec, podUID types.UID, 
 	}
 
 	if remoteVolumeID == "" {
-		remoteVolumeID = spec.Volume.FC.RemoteVolumeID
+		if spec.Volume != nil && spec.Volume.FC != nil {
+			remoteVolumeID = spec.Volume.FC.RemoteVolumeID
+		}
 		glog.V(1).Infof("Try Get RemoteVolumeID from Spec.Volme: RemoteVolumeID=%v", remoteVolumeID)
 	}
 
