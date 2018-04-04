@@ -386,6 +386,17 @@ func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 		return nil
 	}
 	volumeID, err := c.ReadVolumeIDFromPluginsDir(c.GetVolumeIDFilePath())
+
+	defer func(volumeID string) {
+		if volumeID != "" {
+			err := Unlock(c.remoteVolumeServerAddress, volumeID, c.podID, c.instanceID)
+			if err != nil {
+				glog.V(1).Infof("unlock/unmap volume failed: %v", err)
+				glog.Errorf("unlock/unmap volume failed: %v", err)
+			}
+		}
+	}(volumeID)
+
 	if err != nil {
 		glog.V(1).Infof("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
 		glog.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
@@ -398,7 +409,8 @@ func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 		return err
 	}
 
-	err = Unlock(c.remoteVolumeServerAddress, volumeID, c.podID, c.instanceID)
+	//must unlock!!!
+	//err = Unlock(c.remoteVolumeServerAddress, volumeID, c.podID, c.instanceID)
 	return err
 }
 
