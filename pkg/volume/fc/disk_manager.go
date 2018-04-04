@@ -77,7 +77,8 @@ func diskSetUp(manager diskManager, b fcDiskMounter, volPath string, mounter mou
 func diskTearDown(manager diskManager, c fcDiskUnmounter, volPath string, mounter mount.Interface) error {
 	noMnt, err := mounter.IsLikelyNotMountPoint(volPath)
 	if err != nil {
-		glog.Errorf("cannot validate mountpoint %s", volPath)
+		glog.V(1).Infof("cannot validate mountpoint %s, error is %v", volPath, err)
+		glog.Errorf("cannot validate mountpoint %s, error is %v", volPath, err)
 		return err
 	}
 	if noMnt {
@@ -86,11 +87,13 @@ func diskTearDown(manager diskManager, c fcDiskUnmounter, volPath string, mounte
 
 	refs, err := mount.GetMountRefs(mounter, volPath)
 	if err != nil {
-		glog.Errorf("failed to get reference count %s", volPath)
+		glog.V(1).Infof("failed to get reference count %s, error is %v", volPath, err)
+		glog.Errorf("failed to get reference count %s, error is %v", volPath, err)
 		return err
 	}
 	if err := mounter.Unmount(volPath); err != nil {
-		glog.Errorf("failed to unmount %s", volPath)
+		glog.V(1).Infof("failed to unmount %s , error is %v", volPath, err)
+		glog.Errorf("failed to unmount %s , error is %v", volPath, err)
 		return err
 	}
 	// If len(refs) is 1, then all bind mounts have been removed, and the
@@ -98,18 +101,22 @@ func diskTearDown(manager diskManager, c fcDiskUnmounter, volPath string, mounte
 	if len(refs) == 1 {
 		mntPath := refs[0]
 		if err := manager.DetachDisk(c, mntPath); err != nil {
-			glog.Errorf("failed to detach disk from %s", mntPath)
+			glog.V(1).Infof("failed to detach disk from %s , error is %v", mntPath, err)
+			glog.Errorf("failed to detach disk from %s , error is %v", mntPath, err)
 			return err
 		}
 	}
 
 	noMnt, mntErr := mounter.IsLikelyNotMountPoint(volPath)
 	if mntErr != nil {
+		glog.V(1).Infof("isMountpoint check failed: %v", mntErr)
 		glog.Errorf("isMountpoint check failed: %v", mntErr)
 		return err
 	}
 	if noMnt {
 		if err := os.Remove(volPath); err != nil {
+			glog.V(1).Infof("Remote MountPath %v Failedcheck failed: %v", volPath , err)
+			glog.Errorf("Remote MountPath %v Failedcheck failed: %v", volPath , err)
 			return err
 		}
 	}
