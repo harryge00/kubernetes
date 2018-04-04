@@ -110,11 +110,6 @@ func (plugin *fcPlugin) newMounterInternal(spec *volume.Spec, podUID types.UID, 
 		return nil, err
 	}
 
-	//if fc.Lun == nil {
-	//	return nil, fmt.Errorf("empty lun")
-	//}
-	//
-	//lun := strconv.Itoa(int(*fc.Lun))
 	remoteVolumeID := ""
 	if spec.PersistentVolume != nil && spec.PersistentVolume.Spec.FC != nil {
 		remoteVolumeID = spec.PersistentVolume.Spec.FC.RemoteVolumeID
@@ -227,7 +222,7 @@ func (fc *fcDisk) WriteVolumeIDInPluginDir() error {
 	return nil
 }
 
-func (fc *fcDisk)ReadVolumeIDFromPluginsDir() (string,error) {
+func (fc *fcDisk) ReadVolumeIDFromPluginsDir() (string,error) {
 	path := fc.GetVolumeIDFilePath()
 	//if fc.volumeID == "" {
 	//	return "", fmt.Errorf("VolumeID is a empty String, Can't Find Valid Path")
@@ -291,18 +286,56 @@ func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
 	// diskSetUp checks mountpoints and prevent repeated calls
 	_, err := Lock(b)
 	if err != nil {
+
 		glog.Errorf(err.Error())
 		return err
 	}
 	err = b.WriteVolumeIDInPluginDir()
 	if err != nil {
+		glog.Infof("Try to WriteVolumeIDInPluginDir(%v), because of %v. So we try to unlock this volume, exit from SetUpAt()", b.volumeID, err)
+		err1 := b.UnlockWhenSetupFailed()
+		if err1 != nil {
+			glog.Infof("After failure of WriteVolumeIDInPluginDir(%v), So we unlock this volume, but failed: %v", b.volumeID, err)
+		}
+		glog.Fatalf("After failure of WriteVolumeIDInPluginDir(%v), So we unlock this volume, but failed: %v", b.volumeID, err)
 		glog.Errorf("fc: write volumeID to %v failed", filepath.Join(b.GetVolumeIDFilePath(), "dellvolumeinfo"))
+		err = fmt.Errorf(err.Error() + "     " + err1.Error())
+		return err
 	}
 	err = diskSetUp(b.manager, *b, dir, b.mounter, fsGroup)
 	if err != nil {
-		glog.Errorf("fc: failed to setup")
+		glog.Infof("fc: failed to setup: %v", err)
+		glog.Infof("diskSetUp failed, so we must unlock volume:%v", b.volumeID)
+		err1 := b.UnlockWhenSetupFailed()
+		if err1 != nil {
+			glog.Infof("After failure of diskSetUp(%v), So we unlock this volume, but failed: %v", b.volumeID, err1)
+			glog.Fatalf("After failure of diskSetUp(%v), So we unlock this volume, but failed: %v", b.volumeID, err1)
+		}
+		glog.Errorf("fc: failed to setup: %v", err)
+		err = fmt.Errorf(err.Error() + "   " + err1.Error())
 	}
 	return err
+}
+
+func (b *fcDiskMounter) UnlockWhenSetupFailed() error {
+	glog.V(1).Info("UnlockWhenSetupFailed FibreChannel Unlock Begin")
+	glog.V(1).Info("UnlockWhenSetupFailed FibreChannel Unlock, Try to UnlockFromPod Begin")
+	err1 := UnlockFromPod(b.remoteVolumeServerAddress, b.volumeID, b.podID)
+
+	glog.V(1).Info("UnlockWhenSetupFailed FibreChannel Unlock, Try to RemoteDetach from Server")
+	err2 := DetachFromServer(b.remoteVolumeServerAddress, b.instanceID, b.volumeID)
+	if err2 != nil {
+		glog.V(1).Info("UnlockWhenSetupFailed FibreChannel Unlock, RemoteDetach Failed: %v", err2)
+		var err error
+		if err1 != nil {
+			err = fmt.Errorf(err1.Error() + " " + err2.Error())
+		} else {
+			err = err2
+		}
+		return err
+	}
+	return nil
+
 }
 
 type fcDiskUnmounter struct {
@@ -332,6 +365,7 @@ func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 	volumeID, err := c.ReadVolumeIDFromPluginsDir()
 	if err != nil {
 		glog.V(1).Infof("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
+		glog.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
 		return fmt.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
 	}
 

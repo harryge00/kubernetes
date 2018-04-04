@@ -9,8 +9,6 @@ import (
 	"bytes"
 	"strconv"
 	"github.com/golang/glog"
-	//"strings"
-	//"os"
 )
 
 type Volume_Mapping struct {
@@ -82,7 +80,7 @@ type AttachInfo struct {
 	Result		AttachResult	`json:"result,omitempty"`
 }
 
-func GetVolumeStatus(remoteServerAddress string, volumeID string) (attachedToNode bool, lockedByPod bool, podID string, nodeID string, provider_misc ProviderMisc, err error) {
+func GetVolumeStatus(remoteServerAddress string, volumeID string) (podID string, nodeID string, provider_misc ProviderMisc, err error) {
 	glog.V(1).Info("RemoteAttach/RemoteDetach Try To Get Volume Infomation")
 	httpClient := http.Client{}
 	httpClient.Timeout = 3 * time.Second
@@ -100,23 +98,23 @@ func GetVolumeStatus(remoteServerAddress string, volumeID string) (attachedToNod
 		return
 	}
 
-	if data.Result.Attach_Status == "attached" {
-		attachedToNode = true
-	} else if data.Result.Attach_Status == "detached" {
-		attachedToNode = false
-	} else {
-		err = fmt.Errorf("Invalid Volume Server Response, attach_status is Invalid, attach_status: %v", data.Result.Attach_Status)
-		return
-	}
-
-	if data.Result.Status == "idle" {
-		lockedByPod = false
-	} else if data.Result.Status == "busy" {
-		lockedByPod = true
-	} else {
-		err = fmt.Errorf("Invalid Volume Server Response, status is Invalid, status: %v", data.Result.Status)
-		return
-	}
+	//if data.Result.Attach_Status == "attached" {
+	//	attachedToNode = true
+	//} else if data.Result.Attach_Status == "detached" {
+	//	attachedToNode = false
+	//} else {
+	//	err = fmt.Errorf("Invalid Volume Server Response, attach_status is Invalid, attach_status: %v", data.Result.Attach_Status)
+	//	return
+	//}
+	//
+	//if data.Result.Status == "idle" {
+	//	lockedByPod = false
+	//} else if data.Result.Status == "busy" {
+	//	lockedByPod = true
+	//} else {
+	//	err = fmt.Errorf("Invalid Volume Server Response, status is Invalid, status: %v", data.Result.Status)
+	//	return
+	//}
 	podID = data.Result.Provider_Misc.FC.Locker
 	nodeID = data.Result.Volume_Mapping.Instance
 	provider_misc = data.Result.Provider_Misc
@@ -153,7 +151,7 @@ func FCAttachToServer(remoteVolumeServerAddress, instanceID, volumeID string) (l
 	}
 
 	if response.StatusCode == 704 {
-		_, _ , _, _, misc ,err := GetVolumeStatus(remoteVolumeServerAddress, volumeID)
+		 _, _, misc ,err := GetVolumeStatus(remoteVolumeServerAddress, volumeID)
 		if err != nil {
 			glog.V(1).Infof("RemoteAttach FibreChannel: Volume has Already Attached to this Node, but get volume status failed: %v", err)
 			err = fmt.Errorf("RemoteAttach FibreChannel: Volume has Already Attached to this Node, but get volume status failed: %v", err)
@@ -273,7 +271,7 @@ func Unlock(remoteVolumeServerAddress, volumeID, podID, instanceID string) error
 func LockFibreChannel(b *fcDiskMounter) (bool, error) {
 	glog.V(1).Info("FibreChannel Lock Volume Begin")
 	glog.V(1).Infof("FibreChannel Lock Volume Begin: InstanceID=%v VolumeID=%v", b.instanceID, b.volumeID)
-	_, _, podID, nodeID, provide_misc,  err := GetVolumeStatus(b.remoteVolumeServerAddress, b.volumeID)
+	podID, nodeID, provide_misc,  err := GetVolumeStatus(b.remoteVolumeServerAddress, b.volumeID)
 	if err != nil {
 		glog.V(1).Info("FibreChannel Lock Volume Failed,Cause We Can't Get Information")
 		return false,fmt.Errorf("FibreChannel Get Volume Info Error: %v",err)

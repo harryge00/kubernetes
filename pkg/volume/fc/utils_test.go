@@ -143,10 +143,7 @@ func TestGetVolumeInfo(t *testing.T) {
 	volumeName1 := "aaaaaa"
 	volumeName2 := "bbbbbb"
 	volumeName3 := "cccccc"
-	volumeName4 := "dddddd"
-	volumeName5 := "eeeeee"
 	volumeName7 := "gggggg"
-	volumeName8 := "hhhhhh"
 	volumeName12 := "mmmmmm"
 	testHttpServce := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
 		if r.Method != "POST" {
@@ -157,7 +154,7 @@ func TestGetVolumeInfo(t *testing.T) {
 			data.Result.Attach_Status = "attached"
 			data.Result.Status = "busy"
 			data.Result.Volume_Mapping.Instance = "node1"
-			data.Result.Volume_Mapping.Mapping_Misc = "pod1"
+			data.Result.Provider_Misc.FC.Locker = "pod1"
 			body,_ := json.Marshal(data)
 			w.Write(body)
 			w.WriteHeader(200)
@@ -168,7 +165,7 @@ func TestGetVolumeInfo(t *testing.T) {
 			data.Result.Attach_Status = "attached"
 			data.Result.Status = "idle"
 			data.Result.Volume_Mapping.Instance = "node2"
-			data.Result.Volume_Mapping.Mapping_Misc = "pod2"
+			data.Result.Provider_Misc.FC.Locker = "pod2"
 			body,_ := json.Marshal(data)
 			w.Write(body)
 			w.WriteHeader(200)
@@ -179,26 +176,7 @@ func TestGetVolumeInfo(t *testing.T) {
 			data.Result.Attach_Status = "detached"
 			data.Result.Status = "idle"
 			data.Result.Volume_Mapping.Instance = "node3"
-			data.Result.Volume_Mapping.Mapping_Misc = "pod3"
-			body,_ := json.Marshal(data)
-			w.Write(body)
-			w.WriteHeader(200)
-			return
-		}
-		if r.RequestURI == ("/v1/volume/info?volid=" + volumeName4 ){
-			data :=  VolumeInfo{}
-			data.Result.Attach_Status = "detached"
-			data.Result.Volume_Mapping.Instance = "node3"
-			data.Result.Volume_Mapping.Mapping_Misc = "pod3"
-			body,_ := json.Marshal(data)
-			w.Write(body)
-			w.WriteHeader(200)
-			return
-		}
-		if r.RequestURI == ("/v1/volume/info?volid=" + volumeName5 ){
-			data :=  VolumeInfo{}
-			data.Result.Volume_Mapping.Instance = "node3"
-			data.Result.Volume_Mapping.Mapping_Misc = "pod3"
+			data.Result.Provider_Misc.FC.Locker = "pod3"
 			body,_ := json.Marshal(data)
 			w.Write(body)
 			w.WriteHeader(200)
@@ -209,27 +187,6 @@ func TestGetVolumeInfo(t *testing.T) {
 			data.Result.Attach_Status = "detached"
 			data.Result.Status = "idle"
 			data.Result.Volume_Mapping.Instance = "node3"
-			body,_ := json.Marshal(data)
-			w.Write(body)
-			w.WriteHeader(200)
-			return
-		}
-		if r.RequestURI == ("/v1/volume/info?volid=" + volumeName7 ){
-			data :=  VolumeInfo{}
-			data.Result.Attach_Status = "detached"
-			data.Result.Status = "idle"
-			data.Result.Volume_Mapping.Instance = "node3"
-			body,_ := json.Marshal(data)
-			w.Write(body)
-			w.WriteHeader(200)
-			return
-		}
-		if r.RequestURI == ("/v1/volume/info?volid=" + volumeName8 ){
-			data :=  VolumeInfo{}
-			data.Result.Attach_Status = ""
-			data.Result.Status = ""
-			data.Result.Volume_Mapping.Instance = "node1"
-			data.Result.Volume_Mapping.Mapping_Misc = "pod1"
 			body,_ := json.Marshal(data)
 			w.Write(body)
 			w.WriteHeader(200)
@@ -241,7 +198,7 @@ func TestGetVolumeInfo(t *testing.T) {
 			data.Result.Attach_Status = "attached"
 			data.Result.Status = "busy"
 			data.Result.Volume_Mapping.Instance = "node1"
-			data.Result.Volume_Mapping.Mapping_Misc = "pod1"
+			data.Result.Provider_Misc.FC.Locker = "pod1"
 			body,_ := json.Marshal(data)
 			w.Write(body)
 			w.WriteHeader(200)
@@ -251,53 +208,35 @@ func TestGetVolumeInfo(t *testing.T) {
 	defer testHttpServce.Close()
 	remoteVolumeServerAddress := testHttpServce.URL
 
-	attachToNode, lockedByPod, podID, nodeID, _, err := GetVolumeStatus(remoteVolumeServerAddress, volumeName1)
+	 podID, nodeID, _, err := GetVolumeStatus(remoteVolumeServerAddress, volumeName1)
 
-	if !attachToNode || !lockedByPod || podID != "pod1" || nodeID != "node1" || err != nil {
-		t.Errorf("attachToNode: %v; lockedByPod: %v; podID: %v; nodeID: %v; err: %v", attachToNode, lockedByPod, podID, nodeID, err)
+	if podID != "pod1" || nodeID != "node1" || err != nil {
+		t.Errorf("podID: %v; nodeID: %v; err: %v", podID, nodeID, err)
 		t.Fatal("Should Success")
 	}
 
-	attachToNode, lockedByPod, podID, nodeID, _, err = GetVolumeStatus(remoteVolumeServerAddress, volumeName2)
+	podID, nodeID, _, err = GetVolumeStatus(remoteVolumeServerAddress, volumeName2)
 
-	if !attachToNode || lockedByPod || podID != "pod2" || nodeID != "node2" || err != nil {
-		t.Errorf("attachToNode: %v; lockedByPod: %v; podID: %v; nodeID: %v; err: %v", attachToNode, lockedByPod, podID, nodeID, err)
+	if podID != "pod2" || nodeID != "node2" || err != nil {
+		t.Errorf("podID: %v; nodeID: %v; err: %v", podID, nodeID, err)
 		t.Fatal("Should Success")
 	}
 
-	attachToNode, lockedByPod, podID, nodeID, _, err = GetVolumeStatus(remoteVolumeServerAddress, volumeName3)
+	podID, nodeID, _, err = GetVolumeStatus(remoteVolumeServerAddress, volumeName3)
 
-	if attachToNode || lockedByPod || podID != "pod3" || nodeID != "node3" || err != nil {
-		t.Errorf("attachToNode: %v; lockedByPod: %v; podID: %v; nodeID: %v; err: %v", attachToNode, lockedByPod, podID, nodeID, err)
+	if podID != "pod3" || nodeID != "node3" || err != nil {
+		t.Errorf("podID: %v; nodeID: %v; err: %v", podID, nodeID, err)
 		t.Fatal("Should Success")
 	}
 
-	attachToNode, lockedByPod, podID, nodeID, _,  err = GetVolumeStatus(remoteVolumeServerAddress, volumeName4)
-
-	if  err == nil {
-		t.Fatal("Should Fail")
-	}
-
-	attachToNode, lockedByPod, podID, nodeID, _, err = GetVolumeStatus(remoteVolumeServerAddress, volumeName5)
-
-	if  err == nil {
-		t.Fatal("Should Fail")
-	}
-
-	attachToNode, lockedByPod, podID, nodeID, _,  err = GetVolumeStatus(remoteVolumeServerAddress, volumeName7)
+	podID, nodeID, _,  err = GetVolumeStatus(remoteVolumeServerAddress, volumeName7)
 
 	if  err != nil || podID != "" {
 		t.Fatal("podID should empty")
 	}
-
-	attachToNode, lockedByPod, podID, nodeID, _, err = GetVolumeStatus(remoteVolumeServerAddress, volumeName8)
+	podID, nodeID, _, err = GetVolumeStatus(remoteVolumeServerAddress, volumeName12)
 	if err == nil {
-		t.Errorf("attachToNode: %v; lockedByPod: %v; podID: %v; nodeID: %v; err: %v", attachToNode, lockedByPod, podID, nodeID, err)
-		t.Fatal("Should Fail")
-	}
-	attachToNode, lockedByPod, podID, nodeID, _, err = GetVolumeStatus(remoteVolumeServerAddress, volumeName12)
-	if err == nil {
-		t.Errorf("attachToNode: %v; lockedByPod: %v; podID: %v; nodeID: %v; err: %v", attachToNode, lockedByPod, podID, nodeID, err)
+		t.Errorf("podID: %v; nodeID: %v; err: %v", podID, nodeID, err)
 		t.Fatal("Should Fail")
 	}
 }

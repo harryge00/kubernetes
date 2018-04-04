@@ -333,6 +333,7 @@ func (mounter *SafeFormatAndMount) formatAndMount(source string, target string, 
 	glog.V(4).Infof("Checking for issues with fsck on disk: %s", source)
 	args := []string{"-a", source}
 	cmd := mounter.Runner.Command("fsck", args...)
+	glog.V(1).Info("FormatAndMount:  fsck"," ", args)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		ee, isExitError := err.(utilexec.ExitError)
@@ -371,6 +372,7 @@ func (mounter *SafeFormatAndMount) formatAndMount(source string, target string, 
 			}
 			glog.Infof("Disk %q appears to be unformatted, attempting to format as type: %q with options: %v", source, fstype, args)
 			cmd := mounter.Runner.Command("mkfs."+fstype, args...)
+			glog.V(1).Info("FormatAndMount:  mkfs."+fstype," ", args)
 			_, err := cmd.CombinedOutput()
 			if err == nil {
 				// the disk has been formatted successfully try to mount it again.
