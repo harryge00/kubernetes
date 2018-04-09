@@ -333,9 +333,9 @@ func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
 		if err1 != nil {
 			glog.Infof("After failure of diskSetUp(%v), So we unlock this volume, but failed: %v", b.volumeID, err1)
 			glog.Fatalf("After failure of diskSetUp(%v), So we unlock this volume, but failed: %v", b.volumeID, err1)
+			err = fmt.Errorf(err.Error() + "   " + err1.Error())
 		}
 		glog.Errorf("fc: failed to setup: %v", err)
-		err = fmt.Errorf(err.Error() + "   " + err1.Error())
 	}
 	return err
 }
