@@ -3,7 +3,6 @@ package macvlan
 import (
 	"fmt"
 	"net"
-	"net/http"
 	"strings"
 
 	"github.com/cni/pkg/types/current"
@@ -17,7 +16,6 @@ import (
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	"strconv"
-	"sync"
 	"sort"
 	"github.com/containernetworking/cni/libcni"
 )
@@ -40,20 +38,7 @@ type Data struct {
 	Mask    int      `json:"mask,omitempty"`
 }
 
-type DataToDel struct {
-	NetType NetType `json:"nettype,omitempty"`
-	Startip string  `json:"startip,omitempty"`
-	Mask    int     `json:"mask,omitempty"`
-}
-
-// NWClient defines information needed for the k8s api client
-type NWClient struct {
-	baseURL string
-	client  *http.Client
-}
-
 type macvlanNetworkPlugin struct {
-	mutex *sync.Mutex
 	network.NoopNetworkPlugin
 	macvlanName       string
 	host              network.Host
@@ -97,16 +82,12 @@ func NewPlugin(pluginDir string, client dockertools.DockerInterface) network.Net
 }
 
 func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDR string, mtu int) error {
-	plugin.mutex = &sync.Mutex{}
 	plugin.host = host
-	plugin.macvlanName = network.MacvlanPluginName
 	plugin.mtu = mtu
-
 
 	plugin.nonMasqueradeCIDR = nonMasqueradeCIDR
 	pluginConf := fmt.Sprintf("macvlan mode: %v, master: %v, mtu: %v, macvlanName: %s, host: %v, netdev: %s, typer: %s, non-masquerade-cidr: %s ",
 		plugin.mode, plugin.master, plugin.mtu, plugin.macvlanName, plugin.host, plugin.netdev, plugin.typer, plugin.nonMasqueradeCIDR)
-
 	glog.Info("Macvlan config: ", pluginConf)
 
 	return nil
@@ -190,31 +171,10 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	return nil
 }
 
-// TearDownPod return no error because the macvlan will be deleted if docker removed
+// TearDownPod return no error because the macvlan will be deleted if the namespace removed
 func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.ContainerID) error {
 	glog.V(6).Infof("TearDownPod for %v/%v %v", namespace, name, id.ID)
 	return nil
-
-	// Depracted
-	//containerinfo, err := plugin.dclient.InspectContainer(id.ID)
-	//if err != nil {
-	//	glog.Errorf("Failed to get container struct info %v", err)
-	//	return err
-	//}
-	//err, dev, _, _ := getNetCardAndType(containerinfo.Config.Labels)
-	//if err != nil {
-	//	glog.Infof("getNetCardAndType: dev: %v err: %v", dev, err)
-	//	return nil
-	//}
-	//
-	//// IP is released by controllers now.
-	//err = cmdDel(dev, containerinfo.NetworkSettings.SandboxKey)
-	//if err != nil {
-	//	glog.Errorf("Failed to delete ifname from netns %v", err)
-	//} else {
-	//	glog.V(6).Infof("Successfully deletes macvlan netcard %v/%v %v", namespace, name, id.ID)
-	//}
-	//return nil
 }
 
 // Deprecated
@@ -304,9 +264,6 @@ func generateMacAddr(ipv4 string) (net.HardwareAddr, error) {
 }
 
 func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns.NetNS, ipv4 net.IP, mask int, ipv4str string, routes []string) (*current.Interface, error) {
-	plugin.mutex.Lock()
-	defer plugin.mutex.Unlock()
-
 	macvlan := &current.Interface{}
 	mode, err := modeFromString(plugin.mode)
 	if err != nil {
@@ -414,20 +371,4 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 		return nil, err
 	}
 	return macvlan, nil
-}
-
-func cmdDel(macvlanName string, sandBoxKey string) error {
-	// There is a netns so try to clean up. Delete can be called multiple times
-	// so don't return an error if the device is already removed.
-	glog.V(6).Infof("del net card : %v/%v", macvlanName, sandBoxKey)
-	err := ns.WithNetNSPath(sandBoxKey, func(_ ns.NetNS) error {
-		if _, err := ip.DelLinkByNameAddr(macvlanName, netlink.FAMILY_V4); err != nil {
-			glog.Errorf("Failed to DelLinkByNameAddr: %v", err)
-			if err != ip.ErrLinkNotFound {
-				return err
-			}
-		}
-		return nil
-	})
-	return err
 }
