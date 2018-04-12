@@ -510,6 +510,8 @@ type KubeletConfiguration struct {
 
 	//Peiqi, for macvlan network plugin config
 	MacvlanConfigFile string `json:"MacvlanConfigFile,omitempty"`
+
+	RemoteVolumeServerAddr string
 }
 
 type KubeletAuthorizationMode string

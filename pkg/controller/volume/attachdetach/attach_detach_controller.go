@@ -408,3 +408,19 @@ func (adc *attachDetachController) GetSecretFunc() func(namespace, name string) 
 		return nil, fmt.Errorf("GetSecret unsupported in attachDetachController")
 	}
 }
+
+func (adc *attachDetachController) GetRemoteVolumeServerAddress() string {
+	return ""
+}
+
+func (adc *attachDetachController) GetInstanceID() string {
+	return ""
+}
+
+func (adc *attachDetachController) GetVolumeType() string {
+	return ""
+}
+
+func (kvh *attachDetachController) GetPodDir(podUID string) string {
+	return ""
+}

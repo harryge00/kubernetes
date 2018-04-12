@@ -274,4 +274,5 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 
 	fs.Var(&s.ExperimentalQOSReserved, "experimental-qos-reserved", "A set of ResourceName=Percentage (e.g. memory=50%) pairs that describe how pod resource requests are reserved at the QoS level. Currently only memory is supported. [default=none]")
 	fs.StringVar(&s.MacvlanConfigFile, "macvlan-config", s.MacvlanConfigFile, "The path to the macvlan configuration file. default: /etc/macvlan/k8s_macvlan.conf  Empty string for no configuration file.")
+	fs.StringVar(&s.RemoteVolumeServerAddr, "remote-volume-server-address", s.RemoteVolumeServerAddr, "the remote volume server kubelet should connect to get the node can support which type of volume and execute maptoserver action")
 }

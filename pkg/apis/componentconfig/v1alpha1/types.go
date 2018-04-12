@@ -549,6 +549,8 @@ type KubeletConfiguration struct {
 
 	MacvlanConfigFile string `json:"MacvlanConfigFile,omitempty"`
 
+	RemoteVolumeServerAddr string `json:"RemoteVolumeServerAddr,omitempty"`
+
 }
 
 type KubeletAuthorizationMode string

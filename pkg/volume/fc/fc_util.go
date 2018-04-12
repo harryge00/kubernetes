@@ -59,6 +59,7 @@ func findMultipathDeviceMapper(disk string, io ioHandler) string {
 		for _, f := range dirs {
 			name := f.Name()
 			if strings.HasPrefix(name, "dm-") {
+				glog.V(1).Infof("FormatAndMount: ", sys_path + name + "/slaves/" + disk)
 				if _, err1 := io.Lstat(sys_path + name + "/slaves/" + disk); err1 == nil {
 					return "/dev/" + name
 				}
@@ -174,6 +175,7 @@ func (util *FCUtil) AttachDisk(b fcDiskMounter) error {
 	} else {
 		devicePath = disk
 	}
+	glog.Infof("xufeixufei target DevicePath = %v", devicePath)
 	// mount it
 	globalPDPath := b.manager.MakeGlobalPDName(*b.fcDisk)
 	noMnt, err := b.mounter.IsLikelyNotMountPoint(globalPDPath)

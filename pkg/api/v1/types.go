@@ -1067,6 +1067,8 @@ type FCVolumeSource struct {
 	// the ReadOnly setting in VolumeMounts.
 	// +optional
 	ReadOnly bool `json:"readOnly,omitempty" protobuf:"varint,4,opt,name=readOnly"`
+
+	RemoteVolumeID string `json:"remoteVolumeID,omitempty" protobuf:"bytes,5,opt,name=remoteVolumeID"`
 }
 
 // AzureFile represents an Azure File Service mount on the host and bind mount to the pod.

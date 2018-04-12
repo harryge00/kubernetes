@@ -287,3 +287,70 @@ func TestPersistentClaimReadOnlyFlag(t *testing.T) {
 		t.Errorf("Expected true for mounter.IsReadOnly")
 	}
 }
+
+func TestFcDisk_WriteReadVolumeIDFromPluginsDir(t *testing.T) {
+	fc := fcDisk{
+		volumeID: "volume1234",
+		volName: "test1111",
+	}
+
+	err := fc.WriteVolumeIDInPluginDir("/tmp")
+
+	if err != nil {
+		t.Fatal("Should Success")
+	}
+
+	volumeID, err := fc.ReadVolumeIDFromPluginsDir("/tmp/")
+
+	fmt.Println(volumeID)
+	if err != nil {
+		fmt.Println(err.Error())
+	 	t.Fatal("Should Success")
+	}
+
+	if volumeID != fc.volumeID {
+		t.Fatal("Should Equal")
+	}
+
+	fc.volumeID = "volume4321"
+	fc.volName = "test3333"
+
+	err = fc.WriteVolumeIDInPluginDir("/tmp")
+
+	if err != nil {
+		t.Fatal("Should Success")
+	}
+
+	volumeID, err = fc.ReadVolumeIDFromPluginsDir("/tmp")
+
+	fmt.Println(volumeID)
+	if err != nil {
+		fmt.Println(err.Error())
+		t.Fatal("Should Success")
+	}
+
+	if volumeID != fc.volumeID {
+		t.Fatal("Should Equal")
+	}
+
+	fc.volumeID = "22222"
+	fc.volName = "444444"
+
+	err = fc.WriteVolumeIDInPluginDir("/tmp")
+
+	if err != nil {
+		t.Fatal("Should Success")
+	}
+
+	volumeID, err = fc.ReadVolumeIDFromPluginsDir("/tmp")
+
+	fmt.Println(volumeID)
+	if err != nil {
+		fmt.Println(err.Error())
+		t.Fatal("Should Success")
+	}
+
+	if volumeID != fc.volumeID {
+		t.Fatal("Should Equal")
+	}
+}

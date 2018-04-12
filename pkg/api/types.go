@@ -677,6 +677,8 @@ type FCVolumeSource struct {
 	// the ReadOnly setting in VolumeMounts.
 	// +optional
 	ReadOnly bool
+
+	RemoteVolumeID string
 }
 
 // FlexVolume represents a generic volume resource that is
