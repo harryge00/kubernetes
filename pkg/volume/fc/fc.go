@@ -319,10 +319,10 @@ func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
 		err1 := b.UnlockWhenSetupFailed()
 		if err1 != nil {
 			glog.Infof("After failure of WriteVolumeIDInPluginDir(%v), So we unlock this volume, but failed: %v", b.volumeID, err)
+			err = fmt.Errorf(err.Error() + "     " + err1.Error())
 		}
 		glog.Fatalf("After failure of WriteVolumeIDInPluginDir(%v), So we unlock this volume, but failed: %v", b.volumeID, err)
 		glog.Errorf("fc: write volumeID to %v failed", filepath.Join(b.GetVolumeIDFilePath(), "dellvolumeinfo"))
-		err = fmt.Errorf(err.Error() + "     " + err1.Error())
 		return err
 	}
 	err = diskSetUp(b.manager, *b, dir, b.mounter, fsGroup)
