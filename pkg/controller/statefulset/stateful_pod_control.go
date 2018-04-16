@@ -80,9 +80,6 @@ type realStatefulPodControl struct {
 }
 
 func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod *v1.Pod) error {
-	// Send events for servicemanager.
-	// Note: this event can be sent before creating PVC because we want to send pvInfo events after "StatefulSetPodAdd"
-	util.RecordStatefulSetPodEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodAdd")
 	// Create the Pod's PVCs prior to creating the Pod
 	if err := spc.createPersistentVolumeClaims(set, pod); err != nil {
 		spc.recordPodEvent("create", set, pod, err)
@@ -103,6 +100,9 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 	if apierrors.IsAlreadyExists(err) {
 		return err
 	}
+    // Send events for servicemanager.
+	util.RecordStatefulSetPodEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodAdd")
+
 	spc.recordPodEvent("create", set, pod, err)
 	return err
 }
