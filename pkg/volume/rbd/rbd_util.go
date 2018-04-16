@@ -37,7 +37,6 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/util/exec"
 	"k8s.io/kubernetes/pkg/util/mount"
-	"k8s.io/kubernetes/pkg/util/node"
 	"k8s.io/kubernetes/pkg/volume"
 )
 
@@ -123,7 +122,7 @@ func (util *RBDUtil) rbdLock(b rbdMounter, lock bool) error {
 	}
 
 	// construct lock id using host name and a magic prefix
-	lock_id := kubeLockMagic + node.GetHostname("")
+	lock_id := kubeLockMagic + string(b.podUID)
 
 	l := len(b.Mon)
 	// avoid mount storm, pick a host randomly
