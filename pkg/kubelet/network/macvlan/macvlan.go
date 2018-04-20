@@ -10,20 +10,20 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
 
-	"k8s.io/kubernetes/pkg/kubelet/dockertools"
+	"github.com/containernetworking/cni/libcni"
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/network"
-	"strconv"
 	"sort"
-	"github.com/containernetworking/cni/libcni"
+	"strconv"
 )
 
 const (
-	ipAnno = "annotation.ips"
-	maskAnno = "annotation.mask"
-	macPrefix        = "02:42"
+	ipAnno    = "annotation.ips"
+	maskAnno  = "annotation.mask"
+	macPrefix = "02:42"
 )
 
 type NetType string
@@ -64,7 +64,7 @@ func NewPlugin(pluginDir string, client dockertools.DockerInterface) network.Net
 	}
 	macvlanPlug := macvlanNetworkPlugin{
 		macvlanName: network.MacvlanPluginName,
-		dclient: client,
+		dclient:     client,
 	}
 	sort.Strings(files)
 	for _, confFile := range files {
@@ -163,7 +163,9 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	}
 	defer netNamespace.Close()
 
-	iface, err := plugin.createMacvlan(ips[0], netNamespace, parsedIP, mask, ipv4, routes)
+	// If shouldChangeDefaultGateway is true, we use the macvlan iface as the default for routing
+	shouldChangeDefaultGateway := annotations[network.ChangeGateway] == "true"
+	iface, err := plugin.createMacvlan(ips[0], netNamespace, parsedIP, mask, ipv4, routes, shouldChangeDefaultGateway)
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
 	}
@@ -263,7 +265,7 @@ func generateMacAddr(ipv4 string) (net.HardwareAddr, error) {
 	return mac, nil
 }
 
-func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns.NetNS, ipv4 net.IP, mask int, ipv4str string, routes []string) (*current.Interface, error) {
+func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns.NetNS, ipv4 net.IP, mask int, ipv4str string, routes []string, shouldChangeDefaultGateway bool) (*current.Interface, error) {
 	macvlan := &current.Interface{}
 	mode, err := modeFromString(plugin.mode)
 	if err != nil {
@@ -343,6 +345,18 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 		// If macvlan IP is 172.25.12.8/16, gateway should be 172.25.0.1
 		macvlanGateway := ipv4.Mask(ipMask)
 		macvlanGateway[3]++
+
+		if shouldChangeDefaultGateway {
+			err = netlink.RouteReplace(&netlink.Route{
+				LinkIndex: macvlanIface.Attrs().Index,
+				Scope:     netlink.SCOPE_UNIVERSE,
+				Gw:        macvlanGateway,
+			})
+			if err != nil {
+				glog.Warningf("Failed to replace default gateway for %v: %v", ipv4, err)
+				return err
+			}
+		}
 
 		// Add routes to different macvlan networks
 		for _, route := range routes {

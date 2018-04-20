@@ -246,12 +246,12 @@ func ReleaseGroupedIP(namespace, group, ip string) error {
 
 func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, err error) {
 	// No needs to add ips if no label or "ips" has already been added.
-	if pod.ObjectMeta.Annotations[network.IPAnnotationKey] != "" || pod.ObjectMeta.Labels[network.NetworkKey] == "" {
+	if pod.Annotations[network.IPAnnotationKey] != "" || pod.Labels[network.NetworkKey] == "" {
 		return
 	}
-	nets := strings.Split(pod.ObjectMeta.Labels[network.NetworkKey], "-")
+	nets := strings.Split(pod.Labels[network.NetworkKey], "-")
 	if len(nets) != 2 {
-		err = fmt.Errorf("Illegal network label: %v", pod.ObjectMeta.Labels[network.NetworkKey])
+		err = fmt.Errorf("Illegal network label: %v", pod.Labels[network.NetworkKey])
 		return
 	}
 	userIds := strings.Split(namespace, "-")
@@ -265,16 +265,21 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 	if err != nil {
 		return
 	}
-	groupLabel := pod.ObjectMeta.Labels[network.GroupedLabel]
+	groupLabel := pod.Labels[network.GroupedLabel]
 
 	// TODO: too many ifs
 	if !URLSet {
 		err = fmt.Errorf("Please configure url for getting IPs!")
 		return
 	}
+	location := ipLocation
+
+	if pod.Labels["location"] != "" {
+		location = pod.Labels["location"]
+	}
 	req := IpRequire{
 		UserId:   uid,
-		Location: ipLocation,
+		Location: location,
 	}
 	if groupLabel != "" {
 		req.Group = groupLabel
@@ -284,6 +289,8 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		req.NetType = 1 // Production environment: 1, Debug env: 2
 	case "OuterNet":
 		req.NetType = 3
+	case "PrivateNet":
+		req.NetType = 4
 	}
 	glog.V(6).Infof("%v Get IP Req: %v", pod.GenerateName, req)
 
@@ -309,13 +316,15 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 
 	ip = ipResp.Result.IP
 	mask = ipResp.Result.Mask
-	location := ipResp.Result.Location
-
-	pod.ObjectMeta.Annotations[network.IPAnnotationKey] = fmt.Sprintf("%s-%s", nets[0], ip)
-	pod.ObjectMeta.Annotations[network.MaskAnnotationKey] = fmt.Sprintf("%s-%d", nets[0], mask)
-	pod.ObjectMeta.Annotations[network.RoutesAnnotationKey] = strings.Join(ipResp.Result.Routes, ";")
+	// Pass from labels to annotaions so Kubelet can handle
+	if pod.Labels[network.ChangeGateway] == "true" {
+		pod.Annotations[network.ChangeGateway] = "true"
+	}
+	pod.Annotations[network.IPAnnotationKey] = fmt.Sprintf("%s-%s", nets[0], ip)
+	pod.Annotations[network.MaskAnnotationKey] = fmt.Sprintf("%s-%d", nets[0], mask)
+	pod.Annotations[network.RoutesAnnotationKey] = strings.Join(ipResp.Result.Routes, ";")
 	if location != "" {
-		pod.ObjectMeta.Annotations["location"] = location
+		pod.Annotations["location"] = location
 		if pod.Spec.NodeSelector == nil {
 			pod.Spec.NodeSelector = make(map[string]string)
 		}
@@ -326,8 +335,8 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 }
 
 func GetGroupedIpFromPod(pod *v1.Pod) (group, ip string) {
-	group = pod.ObjectMeta.Labels[network.GroupedLabel]
-	if ips := pod.ObjectMeta.Annotations[network.IPAnnotationKey]; ips != "" {
+	group = pod.Labels[network.GroupedLabel]
+	if ips := pod.Annotations[network.IPAnnotationKey]; ips != "" {
 		ipArr := strings.Split(ips, "-")
 		if len(ipArr) == 2 {
 			ip = ipArr[1]
@@ -802,7 +811,7 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
 		// Release IP for grouped pod.
 		if ip != "" {
-			releaseErr := ReleaseGroupedIP(pod.Namespace, pod.ObjectMeta.Labels[network.GroupedLabel], ip)
+			releaseErr := ReleaseGroupedIP(pod.Namespace, pod.Labels[network.GroupedLabel], ip)
 			glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
 		}
 		return fmt.Errorf("unable to create pods: %v", err)

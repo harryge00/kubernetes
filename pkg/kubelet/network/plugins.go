@@ -34,7 +34,6 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/network/hostport"
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
 	utilsysctl "k8s.io/kubernetes/pkg/util/sysctl"
-
 )
 
 const DefaultPluginName = "kubernetes.io/no-op"
@@ -46,6 +45,7 @@ const (
 	RoutesAnnotationKey = "routes"
 	IPAnnotationKey     = "ips"
 	NetworkKey          = "network"
+	ChangeGateway       = "changeGateway"
 	// Label for network groups
 	GroupedLabel = "networkgroup"
 )
