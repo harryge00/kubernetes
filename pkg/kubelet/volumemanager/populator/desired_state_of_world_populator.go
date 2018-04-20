@@ -264,6 +264,7 @@ func (dswp *desiredStateOfWorldPopulator) processPodVolumes(pod *v1.Pod) {
 		return
 	}
 
+	allVolumesAdded := true
 	// Process volume spec for each volume defined in pod
 	for _, podVolume := range pod.Spec.Volumes {
 		volumeSpec, volumeGidValue, err :=
@@ -274,6 +275,7 @@ func (dswp *desiredStateOfWorldPopulator) processPodVolumes(pod *v1.Pod) {
 				podVolume.Name,
 				format.Pod(pod),
 				err)
+			allVolumesAdded = false
 			continue
 		}
 
@@ -287,6 +289,7 @@ func (dswp *desiredStateOfWorldPopulator) processPodVolumes(pod *v1.Pod) {
 				volumeSpec.Name(),
 				uniquePodName,
 				err)
+			allVolumesAdded = false
 		}
 
 		glog.V(10).Infof(
@@ -295,8 +298,9 @@ func (dswp *desiredStateOfWorldPopulator) processPodVolumes(pod *v1.Pod) {
 			volumeSpec.Name(),
 			uniquePodName)
 	}
-
-	dswp.markPodProcessed(uniquePodName)
+	if allVolumesAdded {
+		dswp.markPodProcessed(uniquePodName)
+	}
 }
 
 // podPreviouslyProcessed returns true if the volumes for this pod have already
