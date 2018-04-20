@@ -24,6 +24,13 @@ func RouteDel(route *Route) error {
 	return routeHandle(route, req, nl.NewRtDelMsg())
 }
 
+// RouteReplace will add a route to the system.
+// Equivalent to: `ip route replace $route`
+func RouteReplace(route *Route) error {
+	req := nl.NewNetlinkRequest(syscall.RTM_NEWROUTE, syscall.NLM_F_CREATE|syscall.NLM_F_REPLACE|syscall.NLM_F_ACK)
+	return routeHandle(route, req, nl.NewRtMsg())
+}
+
 func routeHandle(route *Route, req *nl.NetlinkRequest, msg *nl.RtMsg) error {
 	if (route.Dst == nil || route.Dst.IP == nil) && route.Src == nil && route.Gw == nil {
 		return fmt.Errorf("one of Dst.IP, Src, or Gw must not be nil")
