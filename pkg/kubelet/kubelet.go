@@ -17,7 +17,6 @@ limitations under the License.
 package kubelet
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -501,7 +500,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		iptablesDropBit:                         int(kubeCfg.IPTablesDropBit),
 		experimentalHostUserNamespaceDefaulting: utilfeature.DefaultFeatureGate.Enabled(features.ExperimentalHostUserNamespaceDefaultingGate),
 		sampleWindow:                            int32(kubeCfg.SampleWindow),
-		remoteVolumeServerAddr:  kubeCfg.RemoteVolumeServerAddr,
+		remoteVolumeServerAddr:                  kubeCfg.RemoteVolumeServerAddr,
 	}
 
 	secretManager := secret.NewCachingSecretManager(
@@ -523,7 +522,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	glog.Infof("Hairpin mode set to %q", klet.hairpinMode)
 
 	if plug, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
-	//if plug, _, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, kubeCfg.MacvlanConfigFile, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
+		//if plug, _, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, kubeCfg.MacvlanConfigFile, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
 		return nil, err
 	} else {
 		klet.networkPlugin = plug
@@ -1159,9 +1158,9 @@ type Kubelet struct {
 	// samplewindow indicate the number of latest sample result of ServiceProbe (workLoad) to remained
 	sampleWindow int32
 
-	instandID	string
+	instandID string
 
-	diskType        string
+	diskType string
 
 	remoteVolumeServerAddr string
 }
@@ -1621,35 +1620,10 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 		return err
 	}
 
-	// Call the container runtime's SyncPod callback
-	oldIps := pod.ObjectMeta.Annotations[network.IPAnnotationKey]
-	oldMask := pod.ObjectMeta.Annotations[network.MaskAnnotationKey]
 	result := kl.containerRuntime.SyncPod(pod, apiPodStatus, podStatus, pullSecrets, kl.backOff)
 	kl.reasonCache.Update(pod.UID, result)
 	if err = result.Error(); err != nil {
 		return err
-	}
-
-	// the first cond is used to restrict the update frequency, as usually oldIps should equal to newone.
-	if oldIps != pod.ObjectMeta.Annotations[network.IPAnnotationKey] || oldMask != pod.ObjectMeta.Annotations[network.MaskAnnotationKey] {
-		updateMetadata := Data{
-			MetaData: Metadata{
-				Annotations: Annotation{
-					Ips:  pod.ObjectMeta.Annotations[network.IPAnnotationKey],
-					Mask: pod.ObjectMeta.Annotations[network.MaskAnnotationKey],
-				},
-			},
-		}
-		buf, err := json.Marshal(&updateMetadata)
-		if err != nil {
-			fmt.Errorf("Failed to marshal updateMetadata in kubelet, please check %v", err)
-			return err
-		}
-		_, err = kl.kubeClient.Core().Pods(pod.Namespace).Patch(pod.Name, types.StrategicMergePatchType, buf)
-		if err = result.Error(); err != nil {
-			return err
-		}
-
 	}
 
 	// early successful exit if pod is not bandwidth-constrained
