@@ -294,7 +294,7 @@ func TestFcDisk_WriteReadVolumeIDFromPluginsDir(t *testing.T) {
 		volName: "test1111",
 	}
 
-	err := fc.WriteVolumeIDInPluginDir("/tmp")
+	err := fc.WriteVolumeInfoInPluginDir("/tmp")
 
 	if err != nil {
 		t.Fatal("Should Success")
@@ -315,7 +315,7 @@ func TestFcDisk_WriteReadVolumeIDFromPluginsDir(t *testing.T) {
 	fc.volumeID = "volume4321"
 	fc.volName = "test3333"
 
-	err = fc.WriteVolumeIDInPluginDir("/tmp")
+	err = fc.WriteVolumeInfoInPluginDir("/tmp")
 
 	if err != nil {
 		t.Fatal("Should Success")
@@ -336,7 +336,7 @@ func TestFcDisk_WriteReadVolumeIDFromPluginsDir(t *testing.T) {
 	fc.volumeID = "22222"
 	fc.volName = "444444"
 
-	err = fc.WriteVolumeIDInPluginDir("/tmp")
+	err = fc.WriteVolumeInfoInPluginDir("/tmp")
 
 	if err != nil {
 		t.Fatal("Should Success")
