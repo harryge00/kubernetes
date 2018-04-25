@@ -279,11 +279,14 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 	}
 	req := IpRequire{
 		UserId:   uid,
-		Location: location,
 	}
 	if groupLabel != "" {
 		req.Group = groupLabel
+	} else {
+		// If groupLabel is added, we do NOT need location.
+		req.Location = location
 	}
+
 	switch nets[1] {
 	case "InnerNet":
 		req.NetType = 1 // Production environment: 1, Debug env: 2
@@ -316,6 +319,7 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 
 	ip = ipResp.Result.IP
 	mask = ipResp.Result.Mask
+	location = ipResp.Result.Location
 	// Pass from labels to annotaions so Kubelet can handle
 	if pod.Labels[network.ChangeGateway] == "true" {
 		pod.Annotations[network.ChangeGateway] = "true"
