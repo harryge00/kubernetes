@@ -45,7 +45,7 @@ const (
 	RoutesAnnotationKey = "routes"
 	IPAnnotationKey     = "ips"
 	NetworkKey          = "network"
-	ChangeGateway       = "changeGateway"
+	ChangeGateway       = "changeGateWay"
 	// Label for network groups
 	GroupedLabel = "networkgroup"
 )
