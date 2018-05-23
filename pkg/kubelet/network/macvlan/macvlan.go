@@ -325,9 +325,9 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 
 		// No need to try. Because the whole function will be retried if SetUpPod failed.
 		err = netlink.LinkSetUp(macvlanIface)
-		glog.Warningf("failed to set link up %v", err)
 
 		if err != nil {
+			glog.Warningf("failed to set link up %v", err)
 			return err
 		}
 
