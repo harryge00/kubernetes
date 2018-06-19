@@ -56,6 +56,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/server/remotecommand"
 	"k8s.io/kubernetes/pkg/kubelet/server/stats"
 	"k8s.io/kubernetes/pkg/kubelet/server/streaming"
+	volumeHandler "k8s.io/kubernetes/pkg/kubelet/server/volume"
 	"k8s.io/kubernetes/pkg/util/configz"
 	"k8s.io/kubernetes/pkg/util/limitwriter"
 	"k8s.io/kubernetes/pkg/util/term"
@@ -284,6 +285,9 @@ func (s *Server) InstallDefaultHandlers() {
 		To(s.getSpec).
 		Operation("getSpec").
 		Writes(cadvisorapi.MachineInfo{}))
+	s.restfulCont.Add(ws)
+	// Add resize-volume API
+	ws = volumeHandler.CreateHandlers("")
 	s.restfulCont.Add(ws)
 }
 
