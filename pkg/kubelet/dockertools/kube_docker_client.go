@@ -92,13 +92,17 @@ func newKubeDockerClient(dockerClient *dockerapi.Client, requestTimeout, imagePu
 		imagePullProgressDeadline: imagePullProgressDeadline,
 	}
 	// Notice that this assumes that docker is running before kubelet is started.
-	v, err := k.Version()
-	if err != nil {
-		glog.Errorf("failed to retrieve docker version: %v", err)
-		glog.Warningf("Using empty version for docker client, this may sometimes cause compatibility issue.")
-	} else {
-		// Update client version with real api version.
-		dockerClient.UpdateClientVersion(v.APIVersion)
+	for i := 0; i < 3; i++ {
+		v, err := k.Version()
+		if err != nil {
+			glog.Errorf("failed to retrieve docker version: %v", err)
+			glog.Warningf("Using empty version for docker client, this may sometimes cause compatibility issue.")
+		} else {
+			// Update client version with real api version.
+			dockerClient.UpdateClientVersion(v.APIVersion)
+			break
+		}
+		time.Sleep(15 * time.Second)
 	}
 	return k
 }
