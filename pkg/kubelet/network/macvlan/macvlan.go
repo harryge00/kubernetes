@@ -12,6 +12,8 @@ import (
 
 	"github.com/containernetworking/cni/libcni"
 	"github.com/golang/glog"
+	"golang.org/x/net/icmp"
+	"golang.org/x/net/ipv4"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
@@ -48,9 +50,10 @@ type macvlanNetworkPlugin struct {
 	err               error
 	nonMasqueradeCIDR string
 
-	master string
-	mode   string
-	mtu    int
+	icmpMessage []byte
+	master      string
+	mode        string
+	mtu         int
 }
 
 func NewPlugin(pluginDir string, client dockertools.DockerInterface) network.NetworkPlugin {
@@ -76,6 +79,17 @@ func NewPlugin(pluginDir string, client dockertools.DockerInterface) network.Net
 		macvlanPlug.mode = conf.Network.Type
 		macvlanPlug.master = conf.Network.Name
 		break
+	}
+	pingMessage := icmp.Message{
+		Type: ipv4.ICMPTypeEcho, Code: 0,
+		Body: &icmp.Echo{
+			ID: 1, Seq: 1,
+			Data: []byte("HELLO-R-U-THERE"),
+		},
+	}
+	macvlanPlug.icmpMessage, err = pingMessage.Marshal(nil)
+	if err != nil {
+		glog.Error(err)
 	}
 
 	return &macvlanPlug
@@ -173,10 +187,65 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	return nil
 }
 
+func setDownAndRenameLink(linkName string) error {
+	macvlanIface, err := netlink.LinkByName(linkName)
+	if err != nil {
+		return err
+	}
+	err = netlink.LinkSetDown(macvlanIface)
+	if err != nil {
+		return err
+	}
+	// Rename the link to a random name before recycling,
+	// because lots of same link name may cause kernel crash.
+	randName, err := ip.RandomVethName()
+	if err != nil {
+		glog.Error(err)
+	} else {
+		// If the rename failed, we still want to delete the link
+		err = ip.RenameLink(linkName, randName)
+		if err != nil {
+			glog.Error(err)
+		} else {
+			glog.V(6).Infof("Renamed %v to %v", linkName, randName)
+		}
+	}
+
+	// Delete the link even if renaming failed.
+	return err
+}
+
 // TearDownPod return no error because the macvlan will be deleted if the namespace removed
 func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.ContainerID) error {
 	glog.V(6).Infof("TearDownPod for %v/%v %v", namespace, name, id.ID)
-	return nil
+	glog.Flush()
+	containerinfo, err := plugin.dclient.InspectContainer(id.ID)
+	if err != nil {
+		// If container does not exist, no need to TearDown.
+		glog.Errorf("Failed to get container struct info %v", err)
+		return nil
+	}
+
+	if containerinfo.State.Status == "exited" || containerinfo.State.Running == false {
+		return nil
+	}
+	// ipArr like:
+	err, netdev, netIP, _ := getNetCardAndType(containerinfo.Config.Labels)
+
+	glog.V(6).Infof("netdev: %v, ip: %v, err: %v", netdev, netIP, err)
+	if err != nil {
+		return nil
+	}
+
+	err = ns.WithNetNSPath(containerinfo.NetworkSettings.SandboxKey, func(_ ns.NetNS) error {
+		return setDownAndRenameLink(netdev)
+	})
+
+	if err == nil {
+		glog.V(6).Infof("Successfully setDownAndRenameLink %v", netdev)
+	}
+
+	return err
 }
 
 // Deprecated
@@ -188,19 +257,26 @@ func (plugin *macvlanNetworkPlugin) GetPodNetworkStatus(namespace string, name s
 		glog.Errorf("Failed to get container struct info %v", err)
 		return nil, err
 	}
-	// ipArr like:
+	// We do NOT want to replace Pod IP with macvlan IP. So we just return the original pod IP.
+	status := network.PodNetworkStatus{}
+	status.IP = net.ParseIP(c.NetworkSettings.IPAddress)
+
 	err, netdev, ip, mask := getNetCardAndType(c.Config.Labels)
 	glog.V(6).Infof("netdev: %v, ip: %v, mask: %v, err: %v", netdev, ip, mask, err)
 	if err != nil {
-		return nil, nil
+		return &status, nil
 	}
+
+	if c.State.Status == "exited" || c.NetworkSettings.MacAddress == "" {
+		return &status, nil
+	}
+
 	netStr := ip + "/" + mask
 	expectedIPAddr, err := netlink.ParseAddr(netStr)
 	if err != nil {
 		return nil, err
 	}
 
-	status := network.PodNetworkStatus{}
 	err = ns.WithNetNSPath(c.NetworkSettings.SandboxKey, func(_ ns.NetNS) error {
 		link, err := netlink.LinkByName(netdev)
 		if err != nil {
@@ -221,11 +297,9 @@ func (plugin *macvlanNetworkPlugin) GetPodNetworkStatus(namespace string, name s
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("Macvlan failed to open netns %v: %v", c.NetworkSettings.SandboxKey, err)
+		glog.Errorf("GetPodNetworkStatus %v/%v error: %v", namespace, name, err)
 	}
 
-	// We do NOT want to replace Pod IP with macvlan IP. So we just return the original pod IP.
-	status.IP = net.ParseIP(c.NetworkSettings.IPAddress)
 	return &status, nil
 }
 
@@ -346,6 +420,11 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 		macvlanGateway := ipv4.Mask(ipMask)
 		macvlanGateway[3]++
 
+		// For wanghui TEST
+		if strings.HasPrefix(ipv4str, "10.35.48.18") {
+			macvlanGateway = net.ParseIP("10.35.51.254")
+			shouldChangeDefaultGateway = true
+		}
 		if shouldChangeDefaultGateway {
 			err = netlink.RouteReplace(&netlink.Route{
 				LinkIndex: macvlanIface.Attrs().Index,
@@ -378,11 +457,28 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 
 		macvlan.Mac = macvlanIface.Attrs().HardwareAddr.String()
 		macvlan.Sandbox = netNamespace.Path()
-
+		err = plugin.pingGateWay(macvlanGateway.String())
+		if err != nil {
+			glog.Error(err)
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return macvlan, nil
+}
+
+// To flush the ARP cache, ping the gateway. So the switch will know macvlanIP <-> Mac address.
+func (plugin *macvlanNetworkPlugin) pingGateWay(gateWayIP string) error {
+	conn, err := net.Dial("ip4:icmp", gateWayIP)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.Write(plugin.icmpMessage)
+	conn.Close()
+	// No need to wait for ICMP reply.
+
+	return err
 }
