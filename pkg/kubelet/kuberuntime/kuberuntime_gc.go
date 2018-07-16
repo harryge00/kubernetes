@@ -119,6 +119,7 @@ func (cgc *containerGC) removeOldestN(containers []containerGCInfo, toRemove int
 	// Remove from oldest to newest (last to first).
 	numToKeep := len(containers) - toRemove
 	for i := numToKeep; i < len(containers); i++ {
+		glog.V(6).Infof("Removing container %q/%q", containers[i].name, containers[i].id)
 		if err := cgc.manager.removeContainer(containers[i].id); err != nil {
 			glog.Errorf("Failed to remove container %q: %v", containers[i].id, err)
 		}
@@ -131,6 +132,7 @@ func (cgc *containerGC) removeOldestN(containers []containerGCInfo, toRemove int
 // removeSandbox removes the sandbox by sandboxID.
 func (cgc *containerGC) removeSandbox(sandboxID string) {
 	glog.V(4).Infof("Removing sandbox %q", sandboxID)
+	glog.Flush()
 	// In normal cases, kubelet should've already called StopPodSandbox before
 	// GC kicks in. To guard against the rare cases where this is not true, try
 	// stopping the sandbox before removing it.

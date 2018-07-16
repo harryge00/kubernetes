@@ -299,7 +299,7 @@ func (cgc *containerGC) netContainerCleanup(containerInfo containerGCInfo) {
 }
 
 func (cgc *containerGC) removeContainer(containerInfo containerGCInfo) {
-	glog.V(4).Infof("Removing container %q", containerInfo.dockerName)
+	glog.V(4).Infof("Removing container %q, %q", containerInfo.containerName, containerInfo.dockerName)
 	err := cgc.client.RemoveContainer(containerInfo.id, dockertypes.ContainerRemoveOptions{RemoveVolumes: true})
 	if err != nil {
 		glog.Warningf("Failed to remove container %q: %v", containerInfo.dockerName, err)
