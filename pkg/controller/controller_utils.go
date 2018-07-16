@@ -320,6 +320,10 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 	ip = ipResp.Result.IP
 	mask = ipResp.Result.Mask
 	location = ipResp.Result.Location
+	if ip == "" {
+		glog.Errorf("ipResp: %v", ipResp)
+		return
+	}
 	// Pass from labels to annotaions so Kubelet can handle
 	if pod.Labels[network.ChangeGateway] == "true" {
 		pod.Annotations[network.ChangeGateway] = "true"
