@@ -74,6 +74,7 @@ type NetcardEvent struct {
 	Ip         string `json:"ip,omitempty"`
 	NetDevName string `json:"netDevName,omitempty"`
 	NetDevType string `json:"netDevType,omitempty"`
+	UID        string `json:"uid,omitempty"`
 }
 
 type Data struct {
@@ -814,6 +815,7 @@ func (m *kubeGenericRuntimeManager) sendNetEvent(pod *v1.Pod) {
 		PodName:    pod.Name,
 		NetDevName: netdevArr[0],
 		NetDevType: netdevArr[1],
+		UID:        string(pod.UID),
 	}
 	if len(pod.OwnerReferences) > 0 {
 		netEvent.Kind = pod.OwnerReferences[0].Kind
