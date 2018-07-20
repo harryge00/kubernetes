@@ -67,6 +67,7 @@ const (
 	metricsPath = "/metrics"
 	specPath    = "/spec/"
 	statsPath   = "/stats/"
+	volumePath  = "/volumes/"
 	logsPath    = "/logs/"
 )
 
@@ -287,7 +288,7 @@ func (s *Server) InstallDefaultHandlers() {
 		Writes(cadvisorapi.MachineInfo{}))
 	s.restfulCont.Add(ws)
 	// Add resize-volume API
-	ws = volumeHandler.CreateHandlers("")
+	ws = volumeHandler.CreateHandlers(volumePath)
 	s.restfulCont.Add(ws)
 }
 

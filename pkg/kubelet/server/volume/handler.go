@@ -19,7 +19,7 @@ func CreateHandlers(rootPath string) *restful.WebService {
 
 	ws.Route(ws.
 		Method("POST").
-		Path("/volumes/{volumeID}").
+		Path("/{volumeID}").
 		Param(ws.QueryParameter("pretty", "If 'true', then the output is pretty printed.")).
 		To(resizeVolume))
 
@@ -35,7 +35,8 @@ func resizeVolume(request *restful.Request, response *restful.Response) {
 	}
 	stdoutStderr, err := exec.Command(resizeSh, volumeType, volumeID).CombinedOutput()
 	if err != nil {
-		response.WriteHeaderAndEntity(http.StatusInternalServerError, string(stdoutStderr))
+		glog.Errorf("err: %v, stdoutStderr: %v", err, string(stdoutStderr))
+		response.WriteErrorString(http.StatusBadRequest, string(stdoutStderr))
 		return
 	}
 	response.Write([]byte{})

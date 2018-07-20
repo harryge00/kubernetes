@@ -106,6 +106,8 @@ func (n nodeAuthorizerAttributesGetter) GetRequestAttributes(u user.Info, r *htt
 		attrs.Subresource = "log"
 	case isSubpath(requestPath, specPath):
 		attrs.Subresource = "spec"
+	case isSubpath(requestPath, volumePath):
+		attrs.Subresource = "volumes"
 	}
 
 	glog.V(5).Infof("Node request attributes: attrs=%#v", attrs)
