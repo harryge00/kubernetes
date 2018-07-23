@@ -420,30 +420,35 @@ func (m *manager) syncBatch() {
 func (m *manager) recorderPodEvents(pod *v1.Pod, oldStatus v1.PodStatus, newStatus v1.PodStatus) {
 	if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
 		ref := pod.OwnerReferences[0]
+		newPodReady := IsPodReady(&pod.Spec, newStatus.ContainerStatuses)
+		oldPodReady := IsPodReady(&pod.Spec, oldStatus.ContainerStatuses)
 		switch ref.Kind {
 		case "ReplicationController":
-			if IsPodReady(&pod.Spec, oldStatus.ContainerStatuses) != IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
-				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
+			if oldPodReady != newPodReady {
+				if newPodReady {
 					util.RecordRCPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
 				} else {
 					util.RecordRCPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
 				}
 			} else {
-				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
+				if newPodReady && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
 					util.RecordRCPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
 				}
 			}
 		case "Job":
-			if IsPodReady(&pod.Spec, oldStatus.ContainerStatuses) != IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
-				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
+			if oldPodReady != newPodReady {
+				if newPodReady {
 					util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
 				} else {
-					util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+					// If Pod Is succedded, we do not need to send PodNotReady.
+					if newStatus.Phase != v1.PodSucceeded {
+						util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+					}
 				}
 			} else {
-				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
-					util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
-				}
+				//if newPodReady && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
+				//	util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
+				//}
 			}
 
 			if oldStatus.Phase != pod.Status.Phase &&
@@ -452,14 +457,14 @@ func (m *manager) recorderPodEvents(pod *v1.Pod, oldStatus v1.PodStatus, newStat
 				util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", string(pod.Status.Phase))
 			}
 		case "StatefulSet":
-			if IsPodReady(&pod.Spec, oldStatus.ContainerStatuses) != IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
-				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) {
+			if oldPodReady != newPodReady {
+				if newPodReady {
 					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodReady")
 				} else {
 					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
 				}
 			} else {
-				if IsPodReady(&pod.Spec, newStatus.ContainerStatuses) && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
+				if newPodReady && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
 					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
 				}
 			}
