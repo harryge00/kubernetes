@@ -192,7 +192,7 @@ func (util *FCUtil) AttachDisk(b fcDiskMounter) error {
 	if err != nil {
 		return fmt.Errorf("fc: failed to mount fc volume %s [%s] to %s, error %v", devicePath, b.fsType, globalPDPath, err)
 	} else {
-		if b.fsType == "ext4" {
+		if b.fsType == "ext4" || b.fsType == "" {
 			output, err := b.plugin.execCommand("resize2fs", []string{devicePath})
 			glog.V(6).Infof("resize2fs %v: %v/%v", b.volumeID , string(output), err)
 			if err != nil {
