@@ -312,7 +312,7 @@ func (util *RBDUtil) AttachDisk(b rbdMounter) error {
 	} else {
 		if b.fsType == "ext4" {
 			output, err = b.plugin.execCommand("resize2fs", []string{devicePath})
-			glog.V(6).Infof("resize2fs: %v/%v", string(output), err)
+			glog.V(6).Infof("resize2fs %v: %v/%v", b.Image, string(output), err)
 		}
 	}
 	return err
@@ -323,6 +323,7 @@ func (util *RBDUtil) DetachDisk(c rbdUnmounter, mntPath string) error {
 	if err != nil {
 		return fmt.Errorf("rbd detach disk: failed to get device from mnt: %s\nError: %v", mntPath, err)
 	}
+	glog.V(6).Infof("DetachDisk %v/%v", device, cnt)
 	if err = c.mounter.Unmount(mntPath); err != nil {
 		return fmt.Errorf("rbd detach disk: failed to umount: %s\nError: %v", mntPath, err)
 	}
@@ -341,6 +342,8 @@ func (util *RBDUtil) DetachDisk(c rbdUnmounter, mntPath string) error {
 		}
 
 		glog.Infof("rbd: successfully unmap device %s", device)
+	} else {
+		glog.V(6).Info("No need to umap device %s", device)
 	}
 	return nil
 }
