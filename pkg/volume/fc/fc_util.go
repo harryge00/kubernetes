@@ -59,7 +59,7 @@ func findMultipathDeviceMapper(disk string, io ioHandler) string {
 		for _, f := range dirs {
 			name := f.Name()
 			if strings.HasPrefix(name, "dm-") {
-				glog.V(1).Infof("FormatAndMount: ", sys_path + name + "/slaves/" + disk)
+				glog.V(7).Infof("FormatAndMount: ", sys_path + name + "/slaves/" + disk)
 				if _, err1 := io.Lstat(sys_path + name + "/slaves/" + disk); err1 == nil {
 					return "/dev/" + name
 				}
@@ -175,7 +175,7 @@ func (util *FCUtil) AttachDisk(b fcDiskMounter) error {
 	} else {
 		devicePath = disk
 	}
-	glog.Infof("xufeixufei target DevicePath = %v", devicePath)
+	glog.V(7).Infof("xufeixufei target DevicePath = %v", devicePath)
 	// mount it
 	globalPDPath := b.manager.MakeGlobalPDName(*b.fcDisk)
 	noMnt, err := b.mounter.IsLikelyNotMountPoint(globalPDPath)
@@ -191,9 +191,19 @@ func (util *FCUtil) AttachDisk(b fcDiskMounter) error {
 	err = b.mounter.FormatAndMount(devicePath, globalPDPath, b.fsType, nil)
 	if err != nil {
 		return fmt.Errorf("fc: failed to mount fc volume %s [%s] to %s, error %v", devicePath, b.fsType, globalPDPath, err)
+	} else {
+		if b.fsType == "ext4" {
+			output, err := b.plugin.execCommand("resize2fs", []string{devicePath})
+			glog.V(6).Infof("resize2fs %v: %v/%v", b.volumeID , string(output), err)
+			if err != nil {
+				return err
+			} else {
+				return nil
+			}
+		} else {
+			return nil
+		}
 	}
-
-	return err
 }
 
 func (util *FCUtil) DetachDisk(c fcDiskUnmounter, mntPath string) error {
