@@ -132,6 +132,8 @@ type IpRequire struct {
 	UserId   int    `json:"userId,omitempty"`
 	NetType  int    `json:"type,omitempty"`
 	Location string `json:"location,omitempty"`
+	ClusterName string `json:"clustername,omitempty"`
+	Zone string `json:"zone,omitempty"`
 }
 
 type IpRelease struct {
@@ -294,6 +296,8 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		req.NetType = 3
 	case "PrivateNet":
 		req.NetType = 4
+		req.ClusterName = pod.Labels[network.ClusterName]
+		req.Zone = pod.Labels[network.Zone]
 	}
 	glog.V(6).Infof("%v Get IP Req: %v", pod.GenerateName, req)
 

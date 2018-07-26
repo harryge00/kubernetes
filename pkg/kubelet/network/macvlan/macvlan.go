@@ -187,7 +187,7 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	return nil
 }
 
-func setDownAndRenameLink(linkName string) error {
+func deleteLink(linkName string) error {
 	macvlanIface, err := netlink.LinkByName(linkName)
 	if err != nil {
 		return err
@@ -218,11 +218,13 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 	}
 
 	err = ns.WithNetNSPath(containerinfo.NetworkSettings.SandboxKey, func(_ ns.NetNS) error {
-		err = setDownAndRenameLink(netdev)
+		return deleteLink(netdev)
 	})
 
 	if err == nil {
-		glog.V(6).Infof("Successfully setDownAndRenameLink %v", netdev)
+		glog.V(6).Infof("Successfully deleteLink %v", netdev)
+	} else {
+		glog.Errorf("Failed to TearDownPod: %v", err)
 	}
 
 
