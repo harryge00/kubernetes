@@ -311,7 +311,7 @@ func (util *RBDUtil) AttachDisk(b rbdMounter) error {
 		err = fmt.Errorf("rbd: failed to mount rbd volume %s [%s] to %s, error %v", devicePath, b.fsType, globalPDPath, err)
 	} else {
 		if b.fsType == "ext4" || b.fsType == "" {
-			output, err = b.plugin.execCommand("resize2fs", []string{devicePath})
+			output, err := b.plugin.execCommand("resize2fs", []string{devicePath})
 			glog.V(6).Infof("resize2fs %v: %v/%v", b.Image, string(output), err)
 		}
 	}
@@ -343,7 +343,7 @@ func (util *RBDUtil) DetachDisk(c rbdUnmounter, mntPath string) error {
 
 		glog.Infof("rbd: successfully unmap device %s", device)
 	} else {
-		glog.V(6).Info("No need to umap device %s", device)
+		glog.V(6).Info("No need to unmap device %s", device)
 	}
 	return nil
 }
