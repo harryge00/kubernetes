@@ -1,0 +1,13 @@
+{
+	"comment": "",
+	"ignore": "",
+	"package": [
+		{
+			"checksumSHA1": "gS5wdfbttHTrMDjINxMV72ga1nY=",
+			"path": "github.com/mindprince/gonvml",
+			"revision": "b364b296c7320f5d3dc084aa536a3dba33b68f90",
+			"revisionTime": "2018-05-14T03:13:26Z"
+		}
+	],
+	"rootPath": "k8s.io/kubernetes"
+}
