@@ -128,12 +128,12 @@ type IpResp struct {
 }
 
 type IpRequire struct {
-	Group    string `json:"group,omitempty"`
-	UserId   int    `json:"userId,omitempty"`
-	NetType  int    `json:"type,omitempty"`
-	Location string `json:"location,omitempty"`
-	ClusterName string `json:"clustername,omitempty"`
-	Zone string `json:"zone,omitempty"`
+	Group     string `json:"group,omitempty"`
+	UserId    int    `json:"userId,omitempty"`
+	NetType   int    `json:"type,omitempty"`
+	Location  string `json:"location,omitempty"`
+	Zone      string `json:"zone,omitempty"`
+	IsPrivate int    `json:"isPrivate,omitempty"`
 }
 
 type IpRelease struct {
@@ -280,7 +280,7 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		location = pod.Labels["location"]
 	}
 	req := IpRequire{
-		UserId:   uid,
+		UserId: uid,
 	}
 	if groupLabel != "" {
 		req.Group = groupLabel
@@ -292,12 +292,14 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 	switch nets[1] {
 	case "InnerNet":
 		req.NetType = 1 // Production environment: 1, Debug env: 2
+		if pod.Labels["isPrivate"] == "true" {
+			req.IsPrivate = 1
+			req.Zone = pod.Labels["zone"]
+		}
 	case "OuterNet":
 		req.NetType = 3
 	case "PrivateNet":
 		req.NetType = 4
-		req.ClusterName = pod.Labels[network.ClusterName]
-		req.Zone = pod.Labels[network.Zone]
 	}
 	glog.V(6).Infof("%v Get IP Req: %v", pod.GenerateName, req)
 
