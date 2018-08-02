@@ -292,7 +292,7 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 	switch nets[1] {
 	case "InnerNet":
 		req.NetType = 1 // Production environment: 1, Debug env: 2
-		if pod.Labels["isPrivate"] == "true" {
+		if pod.Labels["isPrivate"] == "1" {
 			req.IsPrivate = 1
 			req.Zone = pod.Labels["zone"]
 		}
