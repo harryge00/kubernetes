@@ -737,22 +737,6 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		return
 	}
 
-	if podContainerChanges.CreateSandbox {
-		if v1.IsPodReady(pod) {
-			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
-				ref := pod.OwnerReferences[0]
-				switch ref.Kind {
-				case "ReplicationController":
-					util.RecordRCPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodNotReady")
-				case "Job":
-					util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodNotReady")
-				case "StatefulSet":
-					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
-				}
-			}
-		}
-	}
-
 	// Step 6: start containers in podContainerChanges.ContainersToStart.
 	for idx := range podContainerChanges.ContainersToStart {
 		container := &pod.Spec.Containers[idx]
@@ -771,22 +755,6 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			startContainerResult.Fail(err, msg)
 			utilruntime.HandleError(fmt.Errorf("container start failed: %v: %s", err, msg))
 			continue
-		}
-	}
-	if podContainerChanges.CreateSandbox {
-		if v1.IsPodReady(pod) {
-			if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
-				ref := pod.OwnerReferences[0]
-				// TODO: maybe deprecated because events are not sent from here.
-				switch ref.Kind {
-				case "ReplicationController":
-					util.RecordRCPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodReady")
-				case "Job":
-					util.RecordJobPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodReady")
-				case "StatefulSet":
-					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodReady")
-				}
-			}
 		}
 	}
 
