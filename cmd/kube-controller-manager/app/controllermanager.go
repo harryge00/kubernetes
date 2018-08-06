@@ -475,6 +475,7 @@ func StartControllers(controllers map[string]InitFunc, s *options.CMServer, root
 			s.AllocateNodeCIDRs,
 			s.EnableTaintManager,
 			utilfeature.DefaultFeatureGate.Enabled(features.TaintBasedEvictions),
+			s.CanEvictPodsLabel,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to initialize nodecontroller: %v", err)

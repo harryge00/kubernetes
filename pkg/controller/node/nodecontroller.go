@@ -186,6 +186,10 @@ type NodeController struct {
 	// if set to true NodeController will taint Nodes with 'TaintNodeNotReady' and 'TaintNodeUnreachable'
 	// taints instead of evicting Pods itself.
 	useTaintBasedEvictions bool
+
+	// Only nodes with this label can be evicted pods when timeout.
+	// Default value: canEvictPods
+	canEvictPodsLabel string
 }
 
 // NewNodeController returns a new node controller to sync instances from cloudprovider.
@@ -211,7 +215,8 @@ func NewNodeController(
 	nodeCIDRMaskSize int,
 	allocateNodeCIDRs bool,
 	runTaintManager bool,
-	useTaintBasedEvictions bool) (*NodeController, error) {
+	useTaintBasedEvictions bool,
+	canEvictPodsLabel string) (*NodeController, error) {
 	eventBroadcaster := record.NewBroadcaster()
 	recorder := eventBroadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: "controllermanager"})
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -247,6 +252,7 @@ func NewNodeController(
 		zoneNotReadyOrUnreachableTainer: make(map[string]*RateLimitedTimedQueue),
 		nodeStatusMap:                   make(map[string]nodeStatusData),
 		nodeMonitorGracePeriod:          nodeMonitorGracePeriod,
+		canEvictPodsLabel:               canEvictPodsLabel,
 		nodeMonitorPeriod:               nodeMonitorPeriod,
 		nodeStartupGracePeriod:          nodeStartupGracePeriod,
 		lookupIP:                        net.LookupIP,
@@ -492,6 +498,10 @@ func (nc *NodeController) doEvictionPass() {
 			} else {
 				zone := utilnode.GetZoneKey(node)
 				EvictionsNumber.WithLabelValues(zone).Inc()
+			}
+			if node.Labels[nc.canEvictPodsLabel] != "true" {
+				glog.Warningf("%v is not true for node %v! doEvictionPass in next loop.", nc.canEvictPodsLabel, node.Name)
+				return false, nc.podEvictionTimeout
 			}
 			nodeUid, _ := value.UID.(string)
 			remaining, err := deletePods(nc.kubeClient, nc.recorder, value.Value, nodeUid, nc.daemonSetStore)
