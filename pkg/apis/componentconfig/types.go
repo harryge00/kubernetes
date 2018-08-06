@@ -836,6 +836,8 @@ type KubeControllerManagerConfiguration struct {
 	// Address where controllers require/release IPs
 	IPAllocatorURL string
 	IPLocation     string
+	// Only nodes with this label can be evicted pods when timeout.
+	CanEvictPodsLabel string
 }
 
 // VolumeConfiguration contains *all* enumerated flags meant to configure all volume
