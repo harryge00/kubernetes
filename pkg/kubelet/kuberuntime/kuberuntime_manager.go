@@ -45,7 +45,6 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
-	util "k8s.io/kubernetes/pkg/util/podchanges"
 	utilversion "k8s.io/kubernetes/pkg/util/version"
 	"strings"
 	"sync"

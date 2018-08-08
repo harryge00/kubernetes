@@ -100,7 +100,7 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 	if apierrors.IsAlreadyExists(err) {
 		return err
 	}
-    // Send events for servicemanager.
+	// Send events for servicemanager.
 	util.RecordStatefulSetPodEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodAdd")
 
 	spc.recordPodEvent("create", set, pod, err)
@@ -177,10 +177,10 @@ func (spc *realStatefulPodControl) DeleteStatefulPod(set *apps.StatefulSet, pod 
 
 func (spc *realStatefulPodControl) UpdateStatefulSetStatus(set *apps.StatefulSet, replicas int32, generation int64) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		glog.Infof("UpdateStatefulSetStatus: %v, %v %v", set.Status, replicas, generation)
+		glog.Infof("UpdateStatefulSetStatus: %v -> %v", set.Status.Replicas, replicas)
 		var beReady, beNotReady bool
 
-		if replicas == *set.Spec.Replicas && set.Status.Replicas < *set.Spec.Replicas {
+		if replicas == *set.Spec.Replicas && set.Status.Replicas < replicas {
 			beReady = true
 		} else if set.Status.Replicas == *set.Spec.Replicas && replicas < set.Status.Replicas {
 			beNotReady = true
@@ -190,10 +190,10 @@ func (spc *realStatefulPodControl) UpdateStatefulSetStatus(set *apps.StatefulSet
 		_, err := spc.client.Apps().StatefulSets(set.Namespace).UpdateStatus(set)
 		if err == nil {
 			if beReady {
-				util.RecordStatefulSetStatusEvent(spc.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetReady")
+				util.RecordStatefulSetStatusEvent(spc.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetReady", set.Labels, set.Status.Replicas)
 			}
 			if beNotReady {
-				util.RecordStatefulSetStatusEvent(spc.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetNotReady")
+				util.RecordStatefulSetStatusEvent(spc.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetNotReady", set.Labels, set.Status.Replicas)
 			}
 			return nil
 		}
