@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Kubernetes Authors.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,21 +17,12 @@ limitations under the License.
 package v1
 
 import (
-	"encoding/json"
-	"fmt"
-	"time"
-
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	time_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	rest "k8s.io/client-go/rest"
-	api "k8s.io/kubernetes/pkg/api"
 	v1 "k8s.io/kubernetes/pkg/api/v1"
 	scheme "k8s.io/kubernetes/pkg/client/clientset_generated/clientset/scheme"
-
-	"github.com/golang/glog"
-	util "k8s.io/kubernetes/pkg/util/podchanges"
 )
 
 // PodsGetter has a method to return a PodInterface.
@@ -111,56 +102,24 @@ func (c *pods) UpdateStatus(pod *v1.Pod) (result *v1.Pod, err error) {
 
 // Delete takes name of the pod and deletes it. Returns an error if one occurs.
 func (c *pods) Delete(name string, options *meta_v1.DeleteOptions) error {
-	opt := meta_v1.GetOptions{}
-	pod, err := c.Get(name, opt)
-	res := c.client.Delete().
+	return c.client.Delete().
 		Namespace(c.ns).
 		Resource("pods").
 		Name(name).
 		Body(options).
 		Do().
 		Error()
-	if err == nil && res == nil && pod != nil {
-		if len(pod.OwnerReferences) > 0 {
-			ref := pod.OwnerReferences[0]
-			if ref.Kind == "ReplicationController" {
-				go c.RecordRCPodEvent(ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodDelete")
-			}
-
-			if ref.Kind == "Job" {
-				go c.RecordJobPodEvent(ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodDelete")
-			}
-		}
-	}
-	return res
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *pods) DeleteCollection(options *meta_v1.DeleteOptions, listOptions meta_v1.ListOptions) error {
-	pods, err := c.List(listOptions)
-	res := c.client.Delete().
+	return c.client.Delete().
 		Namespace(c.ns).
 		Resource("pods").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Body(options).
 		Do().
 		Error()
-
-	if res == nil && err == nil {
-		for _, pod := range pods.Items {
-			if len(pod.OwnerReferences) > 0 {
-				ref := pod.OwnerReferences[0]
-				if ref.Kind == "ReplicationController" {
-					go c.RecordRCPodEvent(ref.Name, pod.Namespace, pod.Name, "RcUpdate", "RcPodDelete")
-				}
-
-				if ref.Kind == "Job" {
-					go c.RecordJobPodEvent(ref.Name, pod.Namespace, pod.Name, "JobUpdate", "JobPodDelete")
-				}
-			}
-		}
-	}
-	return res
 }
 
 // Get takes name of the pod, and returns the corresponding pod object, and an error if there is any.
@@ -210,78 +169,4 @@ func (c *pods) Patch(name string, pt types.PatchType, data []byte, subresources 
 		Do().
 		Into(result)
 	return
-}
-
-func (c *pods) RecordJobPodEvent(jobName, namespace, podName, event, action string) {
-	ref := &v1.ObjectReference{
-		Kind:      "job-controller",
-		Name:      podName,
-		Namespace: namespace,
-	}
-	glog.V(2).Infof("Recording %s event message for replication %s", event, jobName)
-	transformation := util.JobTransformation{
-		JobName:   jobName,
-		Namespace: namespace,
-		PodName:   podName,
-		EventType: event,
-		Action:    action,
-	}
-	message, _ := json.Marshal(transformation)
-
-	c.sendEvent(ref, "JobUpdate", fmt.Sprintf("%s", string(message)))
-}
-
-func (c *pods) RecordRCPodEvent(rcName, namespace, podName, event, action string) {
-	ref := &v1.ObjectReference{
-		Kind:      "replication-controller",
-		Name:      podName,
-		Namespace: namespace,
-	}
-	glog.V(2).Infof("Recording %s event message for replication %s", event, rcName)
-	transformation := util.Transformation{
-		RcName:    rcName,
-		Namespace: namespace,
-		PodName:   podName,
-		EventType: event,
-		Action:    action,
-	}
-	message, _ := json.Marshal(transformation)
-
-	c.sendEvent(ref, "RcUpdate", fmt.Sprintf("%s", string(message)))
-}
-
-func (c *pods) sendEvent(ref *v1.ObjectReference, reason, message string) {
-	event := makeEvent(ref, api.EventTypeNormal, reason, message)
-	event.Source = v1.EventSource{Component: "client"}
-	result := &v1.Event{}
-	err := c.client.Post().
-		Namespace(c.ns).
-		Resource("events").
-		Body(event).
-		Do().
-		Into(result)
-	if err != nil {
-		glog.Errorf("Could not construct event: '%#v' due to: '%v'. Will not report event: '%v' '%v' '%v'", ref.Name, err, api.EventTypeNormal, reason, message)
-	}
-}
-
-func makeEvent(ref *v1.ObjectReference, eventtype, reason, message string) *v1.Event {
-	t := time_v1.Time{Time: time.Now()}
-	namespace := ref.Namespace
-	if namespace == "" {
-		namespace = api.NamespaceDefault
-	}
-	return &v1.Event{
-		ObjectMeta: meta_v1.ObjectMeta{
-			Name:      fmt.Sprintf("%v.%x", ref.Name, t.UnixNano()),
-			Namespace: namespace,
-		},
-		InvolvedObject: *ref,
-		Reason:         reason,
-		Message:        message,
-		FirstTimestamp: t,
-		LastTimestamp:  t,
-		Count:          1,
-		Type:           eventtype,
-	}
 }

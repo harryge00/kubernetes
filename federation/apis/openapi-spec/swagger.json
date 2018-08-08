@@ -9937,6 +9937,9 @@
       "description": "Optional: Defaults to false (read/write). ReadOnly here will force the ReadOnly setting in VolumeMounts.",
       "type": "boolean"
      },
+     "remoteVolumeID": {
+      "type": "string"
+     },
      "targetWWNs": {
       "description": "Required: FC target worldwide names (WWNs)",
       "type": "array",
