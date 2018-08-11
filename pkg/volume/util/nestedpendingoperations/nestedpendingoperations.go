@@ -228,6 +228,7 @@ func (grm *nestedPendingOperations) operationComplete(
 	grm.lock.Lock()
 	defer grm.lock.Unlock()
 
+	glog.Infoln("fc_transport: operation: " + volumeName, podName)
 	if *err == nil || !grm.exponentialBackOffOnError {
 		// Operation completed without error, or exponentialBackOffOnError disabled
 		grm.deleteOperation(volumeName, podName)

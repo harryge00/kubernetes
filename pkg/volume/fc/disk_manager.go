@@ -22,6 +22,9 @@ import (
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
+	"fmt"
+	"path/filepath"
+	"strings"
 )
 
 // Abstract interface to disk operations.
@@ -40,19 +43,19 @@ func diskSetUp(manager diskManager, b fcDiskMounter, volPath string, mounter mou
 	noMnt, err := mounter.IsLikelyNotMountPoint(volPath)
 
 	if err != nil && !os.IsNotExist(err) {
-		glog.Errorf("cannot validate mountpoint: %s", volPath)
-		return err
+		glog.Errorf("step_1: cannot validate mountpoint: %s", volPath)
+		return fmt.Errorf("Is Likely Not Mount Point")
 	}
 	if !noMnt {
 		return nil
 	}
 	if err := manager.AttachDisk(b); err != nil {
-		glog.Errorf("failed to attach disk")
+		glog.Errorf("step_2: failed to attach disk")
 		return err
 	}
 
 	if err := os.MkdirAll(volPath, 0750); err != nil {
-		glog.Errorf("failed to mkdir:%s", volPath)
+		glog.Errorf("step_3: failed to mkdir:%s", volPath)
 		return err
 	}
 	// Perform a bind mount to the full path to allow duplicate mounts of the same disk.
@@ -62,7 +65,8 @@ func diskSetUp(manager diskManager, b fcDiskMounter, volPath string, mounter mou
 	}
 	err = mounter.Mount(globalPDPath, volPath, "", options)
 	if err != nil {
-		glog.Errorf("failed to bind mount:%s", globalPDPath)
+		mounter.Unmount(volPath)
+		glog.Errorf("step_4: failed to bind mount:%s", globalPDPath)
 		return err
 	}
 
@@ -73,25 +77,55 @@ func diskSetUp(manager diskManager, b fcDiskMounter, volPath string, mounter mou
 	return nil
 }
 
+
+func getDMDiskName(wwns []string, lun string, io ioHandler) string {
+	for _, wwn := range wwns {
+		_, dm := findDisk(wwn, lun, io)
+		if dm != "" {
+			return dm
+		}
+	}
+	return ""
+}
+
+func getDMSlaves(dm string, io ioHandler) int {
+	dmNames := strings.Split(dm,"/")
+	if len(dmNames) != 3 {
+		return 0
+	}
+	slaves, err := io.ReadDir("/sys/block/" + dmNames[2] + "/slaves/")
+	if err != nil {
+		glog.V(1).Infof("RemoveDellVolume_Fail GetDMSlaves error: ", err.Error())
+		return 0
+	} else {
+		glog.V(1).Infof("RemoveDellVolume_Fail GetDMSlaves Numbers: ", string(len(slaves)))
+		return len(slaves)
+	}
+}
+
 // utility to tear down a disk based filesystem
 func diskTearDown(manager diskManager, c fcDiskUnmounter, volPath string, mounter mount.Interface) error {
 	noMnt, err := mounter.IsLikelyNotMountPoint(volPath)
 	if err != nil {
+		glog.V(1).Infof("RemoveDellVolume_Fail Step 1")
 		glog.V(1).Infof("cannot validate mountpoint %s, error is %v", volPath, err)
 		glog.Errorf("cannot validate mountpoint %s, error is %v", volPath, err)
 		return err
 	}
 	if noMnt {
-		return os.Remove(volPath)
+		glog.V(1).Infof("RemoveDellVolume_Fail Step 2: " + filepath.Join(volPath, "fcvolume"))
+		return os.Remove(filepath.Join(volPath))
 	}
 
 	refs, err := mount.GetMountRefs(mounter, volPath)
 	if err != nil {
+		glog.V(1).Infof("RemoveDellVolume_Fail Step 3")
 		glog.V(1).Infof("failed to get reference count %s, error is %v", volPath, err)
 		glog.Errorf("failed to get reference count %s, error is %v", volPath, err)
 		return err
 	}
 	if err := mounter.Unmount(volPath); err != nil {
+		glog.V(1).Infof("RemoveDellVolume_Fail Step 4")
 		glog.V(1).Infof("failed to unmount %s , error is %v", volPath, err)
 		glog.Errorf("failed to unmount %s , error is %v", volPath, err)
 		return err
@@ -101,6 +135,7 @@ func diskTearDown(manager diskManager, c fcDiskUnmounter, volPath string, mounte
 	if len(refs) == 1 {
 		mntPath := refs[0]
 		if err := manager.DetachDisk(c, mntPath); err != nil {
+			glog.V(1).Infof("RemoveDellVolume_Fail Step 5")
 			glog.V(1).Infof("failed to detach disk from %s , error is %v", mntPath, err)
 			glog.Errorf("failed to detach disk from %s , error is %v", mntPath, err)
 			return err
@@ -109,12 +144,14 @@ func diskTearDown(manager diskManager, c fcDiskUnmounter, volPath string, mounte
 
 	noMnt, mntErr := mounter.IsLikelyNotMountPoint(volPath)
 	if mntErr != nil {
+		glog.V(1).Infof("RemoveDellVolume_Fail Step 6")
 		glog.V(1).Infof("isMountpoint check failed: %v", mntErr)
 		glog.Errorf("isMountpoint check failed: %v", mntErr)
 		return err
 	}
 	if noMnt {
-		if err := os.Remove(volPath); err != nil {
+		if err := os.Remove(filepath.Join(volPath)); err != nil {
+			glog.V(1).Infof("RemoveDellVolume_Fail Step 7")
 			glog.V(1).Infof("Remote MountPath %v Failedcheck failed: %v", volPath , err)
 			glog.Errorf("Remote MountPath %v Failedcheck failed: %v", volPath , err)
 			return err

@@ -241,6 +241,8 @@ type VolumeHost interface {
 	GetVolumeType() string
 
 	GetPodDir(string) string
+
+	GetFcMutex() *sync.Mutex
 }
 
 // VolumePluginMgr tracks registered plugins.

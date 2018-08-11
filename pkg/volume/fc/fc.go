@@ -17,14 +17,10 @@ limitations under the License.
 package fc
 
 import (
-	"fmt"
-	"path/filepath"
-	"os"
-	osexec "os/exec"
-	"io"
 	"bufio"
-	fmtstrings "strings"
+	"fmt"
 	"github.com/golang/glog"
+	"io"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/util/exec"
@@ -32,6 +28,12 @@ import (
 	"k8s.io/kubernetes/pkg/util/strings"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util"
+	"os"
+	osexec "os/exec"
+	"path/filepath"
+	fmtstrings "strings"
+	"sync"
+	"time"
 )
 
 // This is the primary entrypoint for volume plugins.
@@ -113,7 +115,7 @@ func (plugin *fcPlugin) newMounterInternal(spec *volume.Spec, podUID types.UID, 
 	remoteVolumeID := ""
 	if spec.PersistentVolume != nil && spec.PersistentVolume.Spec.FC != nil {
 		remoteVolumeID = spec.PersistentVolume.Spec.FC.RemoteVolumeID
-		glog.V(1).Infof("Try Get RemoteVolumeID from spec.PersistentVolume.Spec.FC: RemoteVolumeID=%v", remoteVolumeID)
+		glog.V(7).Infof("Try Get RemoteVolumeID from spec.PersistentVolume.Spec.FC: RemoteVolumeID=%v", remoteVolumeID)
 	}
 
 	if remoteVolumeID == "" {
@@ -129,19 +131,20 @@ func (plugin *fcPlugin) newMounterInternal(spec *volume.Spec, podUID types.UID, 
 
 	return &fcDiskMounter{
 		fcDisk: &fcDisk{
-			podUID:  podUID,
-			volName: spec.Name(),
+			podUID:   podUID,
+			volName:  spec.Name(),
 			volumeID: remoteVolumeID,
-			manager: manager,
-			io:      &osIOHandler{},
-			plugin:  plugin},
-		fsType:   fc.FSType,
-		readOnly: readOnly,
-		mounter:  &mount.SafeFormatAndMount{Interface: mounter, Runner: exec.New()},
-		remoteVolumeServerAddress:	plugin.host.GetRemoteVolumeServerAddress(),
-		instanceID:			plugin.host.GetInstanceID(),
-		podID:				string(podUID),
-		volumeType:                     plugin.host.GetVolumeType(),
+			manager:  manager,
+			io:       &osIOHandler{},
+			plugin:   plugin,
+			fcmutex:  plugin.host.GetFcMutex()},
+		fsType:                    fc.FSType,
+		readOnly:                  readOnly,
+		mounter:                   &mount.SafeFormatAndMount{Interface: mounter, Runner: exec.New()},
+		remoteVolumeServerAddress: plugin.host.GetRemoteVolumeServerAddress(),
+		instanceID:                plugin.host.GetInstanceID(),
+		podID:                     string(podUID),
+		volumeType:                plugin.host.GetVolumeType(),
 	}, nil
 }
 
@@ -158,12 +161,13 @@ func (plugin *fcPlugin) newUnmounterInternal(volName string, podUID types.UID, m
 			manager: manager,
 			plugin:  plugin,
 			io:      &osIOHandler{},
+			fcmutex: plugin.host.GetFcMutex(),
 		},
-		mounter: mounter,
+		mounter:                   mounter,
 		remoteVolumeServerAddress: plugin.host.GetRemoteVolumeServerAddress(),
-		instanceID: plugin.host.GetInstanceID(),
-		podID:	    string(podUID),
-		volumeType: plugin.host.GetVolumeType(),
+		instanceID:                plugin.host.GetInstanceID(),
+		podID:                     string(podUID),
+		volumeType:                plugin.host.GetVolumeType(),
 	}, nil
 }
 
@@ -183,15 +187,16 @@ func (plugin *fcPlugin) ConstructVolumeSpec(volumeName, mountPath string) (*volu
 }
 
 type fcDisk struct {
-	volName string
-	podUID  types.UID
+	volName  string
+	podUID   types.UID
 	volumeID string
-	portal  string
-	wwns    []string
-	lun     string
-	plugin  *fcPlugin
+	portal   string
+	wwns     []string
+	lun      string
+	plugin   *fcPlugin
 	// Utility interface that provides API calls to the provider to attach/detach disks.
 	manager diskManager
+	fcmutex *sync.Mutex
 	// io handler interface
 	io ioHandler
 	volume.MetricsNil
@@ -208,50 +213,46 @@ func (fc *fcDisk) GetVolumeIDFilePath() string {
 }
 
 func (fc *fcDisk) RemoveVolumeInfoFile(path string) {
-	os.Remove(filepath.Join(path, "dellvolumeinfo"))
+	os.Remove(filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo"))
 }
 
 func (fc *fcDisk) WriteVolumeInfoInPluginDir(rootpath string) error {
 	//rootpath := fc.GetVolumeIDFilePath()
-	volumepath := filepath.Join(rootpath, "dellvolumeinfo")
+	volumepath := filepath.Join(rootpath, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
 	glog.V(1).Infof("Write VolumeID: %v To %v", fc.volName, volumepath)
 
-	_, err := os.Stat(volumepath)
+	os.Remove(volumepath)
+	os.Create(volumepath)
+
+	f, err := os.OpenFile(volumepath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
-		_, err = os.Create(volumepath)
-		if err != nil {
-			glog.V(1).Infof("Create VolumeID file failed: %v", err)
-			return fmt.Errorf("Create VolumeID file failed: %v", err)
-		}
-	}
-	f , err := os.OpenFile(volumepath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
+		glog.Errorf("Create_Dellvolumeinfo error: %v", err)
 		return err
 	}
 	defer f.Close()
 
 	_, err = f.WriteString("volName=" + fc.volumeID + "\n")
 	if err != nil {
-		glog.V(1).Infof("Fail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, volumepath, err)
-		return fmt.Errorf("Fail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, volumepath, err)
+		glog.Errorf("Create_DellvolumeinfoFail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, volumepath, err)
+		return fmt.Errorf("Create_Dellvolumeinfo Fail to Write VolumeID: %v To %v , Meet %v", fc.volumeID, volumepath, err)
 	}
 
 	_, err = f.WriteString("wwns=" + fmtstrings.Join(fc.wwns, ",") + "\n")
 	if err != nil {
-		glog.V(1).Infof("Fail to Write Wwns: %v To %v , Meet %v", fc.wwns, volumepath, err)
+		glog.Errorf("Create_Dellvolumeinfo Fail to Write Wwns: %v To %v , Meet %v", fc.wwns, volumepath, err)
 		return fmt.Errorf("Fail to Write Wwns: %v To %v , Meet %v", fc.wwns, volumepath, err)
 	}
 
 	_, err = f.WriteString("lun=" + fc.lun + "\n")
 	if err != nil {
-		glog.V(1).Infof("Fail to Write Lun: %v To %v , Meet %v", fc.lun , volumepath, err)
-		return fmt.Errorf("Fail to Write Lun: %v To %v , Meet %v", fc.lun , volumepath, err)
+		glog.Errorf("Create_Dellvolumeinfo Fail to Write Lun: %v To %v , Meet %v", fc.lun, volumepath, err)
+		return fmt.Errorf("Fail to Write Lun: %v To %v , Meet %v", fc.lun, volumepath, err)
 	}
 	return nil
 }
 
 func (fc *fcDisk) ReadWwnsAndLunFromPluginsDir(path string) (wwns, lun string, err error) {
-	volumepath := filepath.Join(path, "dellvolumeinfo")
+	volumepath := filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
 	f, err := os.Open(volumepath)
 	if err != nil {
 		return wwns, lun, err
@@ -260,18 +261,18 @@ func (fc *fcDisk) ReadWwnsAndLunFromPluginsDir(path string) (wwns, lun string, e
 
 	reader := bufio.NewReader(f)
 
-	for  {
+	for {
 		line, err := reader.ReadString('\n')
 		glog.Infof("dellfc line: %v", line)
 		if line != "" {
 			line = fmtstrings.TrimRight(line, "\n")
 		}
 		if err != nil {
-			if err != io.EOF  {
+			if err != io.EOF {
 				sep := fmtstrings.Split(line, "=")
 				line = fmtstrings.TrimSuffix(line, "\n")
 				if len(sep) == 2 {
-					if sep[0] == "wwns" && wwns == ""{
+					if sep[0] == "wwns" && wwns == "" {
 						wwns = sep[1]
 					}
 					if sep[0] == "lun" && lun == "" {
@@ -303,8 +304,8 @@ func (fc *fcDisk) ReadWwnsAndLunFromPluginsDir(path string) (wwns, lun string, e
 	}
 }
 
-func (fc *fcDisk) ReadVolumeIDFromPluginsDir(path string) (string,error) {
-	volumepath := filepath.Join(path, "dellvolumeinfo")
+func (fc *fcDisk) ReadVolumeIDFromPluginsDir(path string) (string, error) {
+	volumepath := filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
 	f, err := os.Open(volumepath)
 	if err != nil {
 		return "", err
@@ -313,13 +314,13 @@ func (fc *fcDisk) ReadVolumeIDFromPluginsDir(path string) (string,error) {
 
 	reader := bufio.NewReader(f)
 
-	for  {
+	for {
 		volumeID, err := reader.ReadString('\n')
 		if volumeID != "" {
 			volumeID = fmtstrings.TrimRight(volumeID, "\n")
 		}
 		if err != nil {
-			if err != io.EOF  {
+			if err != io.EOF {
 				sep := fmtstrings.Split(volumeID, "=")
 				volumeID = fmtstrings.TrimSuffix(volumeID, "\n")
 				if len(sep) == 2 {
@@ -344,13 +345,13 @@ func (fc *fcDisk) ReadVolumeIDFromPluginsDir(path string) (string,error) {
 
 type fcDiskMounter struct {
 	*fcDisk
-	readOnly bool
-	fsType   string
+	readOnly                  bool
+	fsType                    string
 	remoteVolumeServerAddress string
-	instanceID	string
-	volumeType      string
-	podID		string
-	mounter  *mount.SafeFormatAndMount
+	instanceID                string
+	volumeType                string
+	podID                     string
+	mounter                   *mount.SafeFormatAndMount
 }
 
 var _ volume.Mounter = &fcDiskMounter{}
@@ -376,34 +377,47 @@ func (b *fcDiskMounter) SetUp(fsGroup *int64) error {
 
 func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
 	// diskSetUp checks mountpoints and prevent repeated calls
+	b.fcmutex.Lock()
+	defer b.fcmutex.Unlock()
 	_, err := Lock(b)
 	if err != nil {
 		glog.Errorf(err.Error())
 		return err
 	}
-	err = b.WriteVolumeInfoInPluginDir(b.GetVolumeIDFilePath())
-	if err != nil {
-		glog.Infof("Try to WriteVolumeIDInPluginDir(%v), because of %v. So we try to unlock this volume, exit from SetUpAt()", b.volumeID, err)
-		err1 := b.UnlockWhenSetupFailed()
-		if err1 != nil {
-			glog.Infof("After failure of WriteVolumeIDInPluginDir(%v), So we unlock this volume, but failed: %v", b.volumeID, err)
-		}
-		glog.Fatalf("After failure of WriteVolumeIDInPluginDir(%v), So we unlock this volume, but failed: %v", b.volumeID, err)
-		glog.Errorf("fc: write volumeID to %v failed", filepath.Join(b.GetVolumeIDFilePath(), "dellvolumeinfo"))
-		err = fmt.Errorf(err.Error() + "     " + err1.Error())
-		return err
-	}
+
 	err = diskSetUp(b.manager, *b, dir, b.mounter, fsGroup)
 	if err != nil {
-		glog.Infof("fc: failed to setup: %v", err)
-		glog.Infof("diskSetUp failed, so we must unlock volume:%v", b.volumeID)
-		err1 := b.UnlockWhenSetupFailed()
-		if err1 != nil {
-			glog.Infof("After failure of diskSetUp(%v), So we unlock this volume, but failed: %v", b.volumeID, err1)
-			glog.Fatalf("After failure of diskSetUp(%v), So we unlock this volume, but failed: %v", b.volumeID, err1)
-			err = fmt.Errorf(err.Error() + "   " + err1.Error())
-		}
+		// no fc disk found or Is Likely Not MountPoint : we will simply unlock and detach dellvolume
 		glog.Errorf("fc: failed to setup: %v", err)
+		glog.Errorf("diskSetUp_failed, so we must unlock volume:%v", b.volumeID)
+		if err.Error() != "no fc disk found" || err.Error() != "Is Likely Not Mount Point" {
+			glog.Errorf("diskSetUp_failed, clean %v", b.volumeID)
+			if b.lun != "" && len(b.wwns) != 0 && b.volumeID != "" {
+				volumeID := b.volumeID
+				wwns := fmtstrings.Join(b.wwns, ",")
+				lun := b.lun
+				glog.V(1).Infoln("RemoteDellVolume_Clean after disksetup failed")
+				out, err2 := osexec.Command("/bin/bash", "-c", "/usr/bin/clean_removal.sh "+wwns+" "+lun+" "+volumeID).CombinedOutput()
+				if err2 != nil {
+					glog.V(1).Infof("RemoteDellVolume_Clean clean fc device failed, meet error: %v , info: %v,"+
+						"volumeID=%v, wwns=%v, lun=%v", err, string(out), volumeID, fmtstrings.Join(b.wwns, ","), lun)
+					glog.Errorf("RemoteDellVolume_Clean clean fc device failed, meet error: %v , info: %v", err, string(out))
+					//err = fmt.Errorf("clean fc device failed, meet error: %v , info: %v", err, string(out))
+					//return err
+				}
+				err1 := b.UnlockWhenSetupFailed()
+				if err1 != nil {
+					glog.Errorf("After failure of diskSetUp(%v), So we unlock this volume, but failed: %v", b.volumeID, err1)
+					err = fmt.Errorf(err.Error() + "   " + err1.Error())
+					glog.Errorf("fc: failed to setup: %v", err)
+					return err
+				}
+				glog.V(1).Infoln("RemoteDellVolume_Clean after disksetup failed")
+				osexec.Command("/bin/bash", "-c", "/usr/bin/clean_removal.sh "+wwns+" "+lun+" "+volumeID).CombinedOutput()
+			}
+		}
+	} else {
+		b.WriteVolumeInfoInPluginDir(b.GetVolumeIDFilePath())
 	}
 	return err
 }
@@ -416,7 +430,7 @@ func (b *fcDiskMounter) UnlockWhenSetupFailed() error {
 	glog.V(1).Info("UnlockWhenSetupFailed FibreChannel Unlock, Try to RemoteDetach from Server")
 	err2 := DetachFromServer(b.remoteVolumeServerAddress, b.instanceID, b.volumeID)
 	if err2 != nil {
-		glog.V(1).Info("UnlockWhenSetupFailed FibreChannel Unlock, RemoteDetach Failed: %v", err2)
+		glog.Errorf("UnlockWhenSetupFailed FibreChannel Unlock, RemoteDetach Failed: %v", err2)
 		var err error
 		if err1 != nil {
 			err = fmt.Errorf(err1.Error() + " " + err2.Error())
@@ -431,11 +445,11 @@ func (b *fcDiskMounter) UnlockWhenSetupFailed() error {
 
 type fcDiskUnmounter struct {
 	*fcDisk
-	mounter mount.Interface
+	mounter                   mount.Interface
 	remoteVolumeServerAddress string
-	instanceID	string
-	volumeType      string
-	podID		string
+	instanceID                string
+	volumeType                string
+	podID                     string
 }
 
 var _ volume.Unmounter = &fcDiskUnmounter{}
@@ -447,6 +461,9 @@ func (c *fcDiskUnmounter) TearDown() error {
 }
 
 func (c *fcDiskUnmounter) TearDownAt(dir string) error {
+	glog.Infoln("begin uninstall dellfc volume: " + dir)
+	c.fcmutex.Lock()
+	defer c.fcmutex.Unlock()
 	if pathExists, pathErr := util.PathExists(dir); pathErr != nil {
 		return fmt.Errorf("Error checking if path exists: %v", pathErr)
 	} else if !pathExists {
@@ -455,49 +472,56 @@ func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 	}
 	volumeID, err := c.ReadVolumeIDFromPluginsDir(c.GetVolumeIDFilePath())
 	if err != nil {
-		glog.V(1).Infof("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
-		glog.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
-		return fmt.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
+		glog.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes", "kubernetes.io~fc","dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(),"volumes","kubernetes.io~fc", "dellvolumeinfo"), err)
 	}
 
 	wwns, lun, err := c.ReadWwnsAndLunFromPluginsDir(c.GetVolumeIDFilePath())
 	if err != nil {
-		glog.V(1).Infof("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
-		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
-		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
+		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(),"volumes", "kubernetes.io~fc","dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes","kubernetes.io~fc","dellvolumeinfo"), err)
 	}
 
 	if wwns == "" || lun == "" {
-		glog.V(1).Infof("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
-		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
-		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
+		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes","kubernetes.io~fc", "dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes", "kubernetes.io~fc", "dellvolumeinfo"), err)
 	}
 
+	glog.V(1).Infof("Wwns=%v, Lun=%v , volomeID=%v  dir=%v ", wwns, lun, volumeID, dir)
+
+	dmName := getDMDiskName(fmtstrings.Split(wwns, ","), lun, c.io)
+
+	glog.V(1).Infoln("DMName is: ", dmName)
 	err = diskTearDown(c.manager, *c, dir, c.mounter)
 
 	if err != nil {
+		glog.Errorf("RemoveDellVolume_Fail Wwns=%v, Lun=%v , volomeID=%v error=%v", wwns, lun, volumeID, err)
 		return err
 	}
-	glog.V(1).Infof("Wwns=%v, Lun=%v , volomeID=%v", wwns, lun, volumeID)
 
-	// bash /usr/bin/clean_removal.sh wwns lun
-	out, err := osexec.Command("/bin/bash", "-c", "/usr/bin/clean_removal.sh " + wwns + " " + lun ).CombinedOutput()
-	if err != nil {
-		glog.V(1).Infof("clean fc device failed, meet error: %v , info: %v", err, string(out))
-		glog.V(1).Infof("clean fc device failed, volumeID=%v, wwns=%v, lun=%v", volumeID, wwns, lun)
-		glog.Errorf("clean fc device failed, meet error: %v , info: %v", err, string(out))
-		err = fmt.Errorf("clean fc device failed, meet error: %v , info: %v", err, string(out))
-		return err
+	for true {
+		// bash /usr/bin/clean_removal.sh wwns lun
+		out, err := osexec.Command("/bin/bash", "-c", "/usr/bin/clean_removal.sh "+wwns+" "+lun+" "+volumeID).CombinedOutput()
+		if err != nil {
+			glog.Errorf("clean_fc device failed, meet error: %v , info: %v", err, string(out))
+			glog.Errorf("clean_fc device failed, volumeID=%v, wwns=%v, lun=%v", volumeID, wwns, lun)
+			glog.Errorf("clean_fc device failed, meet error: %v , info: %v", err, string(out))
+		}
+		if getDMSlaves(dmName, c.io) != 0 {
+			time.Sleep( 2 * time.Second )
+		} else {
+			break
+		}
 	}
 
 	if volumeID != "" {
 		err := Unlock(c.remoteVolumeServerAddress, volumeID, c.podID, c.instanceID)
 		if err != nil {
-			glog.V(1).Infof("unlock/unmap volume failed: %v", err)
 			glog.Errorf("unlock/unmap volume failed: %v", err)
 			return err
 		}
 	}
+	glog.V(1).Infof("RemoveDellVolume_Success Wwns=%v, Lun=%v , volomeID=%v", wwns, lun, volumeID)
 	c.RemoveVolumeInfoFile(c.GetVolumeIDFilePath())
 	return err
 }

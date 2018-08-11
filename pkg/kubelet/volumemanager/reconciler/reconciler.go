@@ -562,6 +562,7 @@ func (rc *reconciler) reconstructVolume(volume podVolume) (*reconstructedVolume,
 	return reconstructedVolume, nil
 }
 
+
 func (rc *reconciler) updateStates(volumesNeedUpdate map[v1.UniqueVolumeName]*reconstructedVolume) error {
 	// Get the node status to retrieve volume device path information.
 	node, fetchErr := rc.kubeClient.Core().Nodes().Get(string(rc.nodeName), metav1.GetOptions{})
@@ -658,7 +659,12 @@ func getVolumesFromPodDir(podDir string) ([]podVolume, error) {
 			}
 
 			unescapePluginName := strings.UnescapeQualifiedNameForDisk(pluginName)
+			//如果有两快dellfc盘，肯定 发生 错误，一定要避免这种情况
 			for _, volumeName := range volumePluginDirs {
+				if volumeName == "dellvolumeinfo" {
+					glog.Infoln("We find a remining dellvolumeinfo, dell volume may not cleanup")
+					continue
+				}
 				mountPath := path.Join(volumePluginPath, volumeName)
 				volumes = append(volumes, podVolume{
 					podName:        volumetypes.UniquePodName(podName),
