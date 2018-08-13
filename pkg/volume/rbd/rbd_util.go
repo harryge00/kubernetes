@@ -343,7 +343,7 @@ func (util *RBDUtil) DetachDisk(c rbdUnmounter, mntPath string) error {
 
 		glog.Infof("rbd: successfully unmap device %s", device)
 	} else {
-		glog.V(6).Info("No need to umap device %s", device)
+		glog.V(6).Info("No need to unmap device %s", device)
 	}
 	return nil
 }

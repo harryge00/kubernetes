@@ -47,6 +47,7 @@ const (
 	DiskIOMetrics          MetricKind = "diskIO"
 	DiskUsageMetrics       MetricKind = "disk"
 	NetworkUsageMetrics    MetricKind = "network"
+	AcceleratorUsageMetrics MetricKind = "accelerator"
 	NetworkTcpUsageMetrics MetricKind = "tcp"
 	AppMetrics             MetricKind = "app"
 )

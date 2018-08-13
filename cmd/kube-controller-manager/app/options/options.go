@@ -108,6 +108,7 @@ func NewCMServer() *CMServer {
 			HorizontalPodAutoscalerUseRESTClients: false,
 			IPAllocatorURL:                        "http://localhost:8080",
 			IPLocation:                            "1199",
+			CanEvictPodsLabel:                     "canEvictPods",
 		},
 	}
 	s.LeaderElection.LeaderElect = true

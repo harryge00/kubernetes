@@ -5,34 +5,31 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api"
 
-	"github.com/golang/glog"
 	clientv1 "k8s.io/client-go/pkg/api/v1"
 )
 
-type Transformation struct {
-	EventType string `json:"eventType,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	PodName   string `json:"podName,omitempty"`
-	RcName    string `json:"rcName,omitempty"`
-	Action    string `json:"action,omitempty"`
+// Both RcPodChange and RcStatusChange will use it.
+type RcChangeEvent struct {
+	EventType     string `json:"eventType,omitempty"`
+	Namespace     string `json:"namespace,omitempty"`
+	PodName       string `json:"podName,omitempty"`
+	RcName        string `json:"rcName,omitempty"`
+	Action        string `json:"action,omitempty"`
+	Room          string `json:"room,omitempty"`
+	ReadyReplicas int32  `json:"readyReplicas,omitempty"`
 }
 
-type SSTransformation struct {
-	EventType string `json:"eventType,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	SsName    string `json:"ssName,omitempty"`
-	Action    string `json:"action,omitempty"`
+type StatefulsetChangeEvent struct {
+	EventType     string `json:"eventType,omitempty"`
+	Namespace     string `json:"namespace,omitempty"`
+	PodName       string `json:"podName,omitempty"`
+	SsName        string `json:"ssName,omitempty"`
+	Action        string `json:"action,omitempty"`
+	Room          string `json:"room,omitempty"`
+	ReadyReplicas int32  `json:"readyReplicas,omitempty"`
 }
 
-type SSPodTransformation struct {
-	EventType string `json:"eventType,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	PodName   string `json:"podName,omitempty"`
-	SsName    string `json:"ssName,omitempty"`
-	Action    string `json:"action,omitempty"`
-}
-
-type JobTransformation struct {
+type JobChangeEvent struct {
 	EventType string `json:"eventType,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
 	PodName   string `json:"podName,omitempty"`
@@ -55,7 +52,6 @@ func RecorcRCAutoScaleEvent(recorder record.EventRecorder, rcName, namespace, ev
 		Name:      "",
 		Namespace: namespace,
 	}
-	glog.V(2).Infof("record event autoscale message for replication %s", rcName)
 
 	autoScaleInfo := RcAutoScaleInfo{
 		Namespace:  namespace,
@@ -70,20 +66,22 @@ func RecorcRCAutoScaleEvent(recorder record.EventRecorder, rcName, namespace, ev
 	recorder.Eventf(ref, api.EventTypeNormal, "RcUpdate", "%s", string(message))
 }
 
-func RecordRCStatusEvent(recorder record.EventRecorder, rcName, namespace, event, action string) {
+// TODO: should extract useful information and pass them through events. Eliminate the HTTP requests to get pods/RCs in servicemanager!
+func RecordRCStatusEvent(recorder record.EventRecorder, rcName, namespace, event, action string, labels map[string]string, readyReplicas int32) {
 	ref := &clientv1.ObjectReference{
 		Kind:      "replication-controller",
 		Name:      rcName,
 		Namespace: namespace,
 	}
-	glog.V(2).Infof("/ %s event message for replication %s", event, rcName)
-	transformation := Transformation{
-		RcName:    rcName,
-		Namespace: namespace,
-		EventType: event,
-		Action:    action,
+	rcChangeEvent := RcChangeEvent{
+		RcName:        rcName,
+		Namespace:     namespace,
+		EventType:     event,
+		Action:        action,
+		Room:          labels["room"],
+		ReadyReplicas: readyReplicas,
 	}
-	message, _ := json.Marshal(transformation)
+	message, _ := json.Marshal(rcChangeEvent)
 
 	recorder.Eventf(ref, api.EventTypeNormal, "RcStatusUpdate", "%s", string(message))
 }
@@ -94,33 +92,33 @@ func RecordRCPodEvent(recorder record.EventRecorder, rcName, namespace, podName,
 		Name:      podName,
 		Namespace: namespace,
 	}
-	glog.V(2).Infof("/ %s event message for replication %s", event, rcName)
-	transformation := Transformation{
+	rcChangeEvent := RcChangeEvent{
 		RcName:    rcName,
 		Namespace: namespace,
 		PodName:   podName,
 		EventType: event,
 		Action:    action,
 	}
-	message, _ := json.Marshal(transformation)
+	message, _ := json.Marshal(rcChangeEvent)
 
 	recorder.Eventf(ref, api.EventTypeNormal, "RcUpdate", "%s", string(message))
 }
 
-func RecordStatefulSetStatusEvent(recorder record.EventRecorder, ssName, namespace, event, action string) {
+func RecordStatefulSetStatusEvent(recorder record.EventRecorder, ssName, namespace, event, action string, labels map[string]string, readyReplicas int32) {
 	ref := &clientv1.ObjectReference{
 		Kind:      "StatefulSet",
 		Name:      ssName,
 		Namespace: namespace,
 	}
-	glog.V(6).Infof("/ %s event message for ss %s", event, ssName)
-	transformation := SSTransformation{
-		SsName:    ssName,
-		Namespace: namespace,
-		EventType: event,
-		Action:    action,
+	changeEvent := StatefulsetChangeEvent{
+		SsName:        ssName,
+		Namespace:     namespace,
+		EventType:     event,
+		Action:        action,
+		Room:          labels["room"],
+		ReadyReplicas: readyReplicas,
 	}
-	message, _ := json.Marshal(transformation)
+	message, _ := json.Marshal(changeEvent)
 
 	recorder.Eventf(ref, api.EventTypeNormal, "StatefulSetStatusUpdate", "%s", string(message))
 }
@@ -131,15 +129,14 @@ func RecordStatefulSetPodEvent(recorder record.EventRecorder, ssName, namespace,
 		Name:      ssName,
 		Namespace: namespace,
 	}
-	glog.V(2).Infof("/ %s event message for ss %s", event, ssName)
-	transformation := SSPodTransformation{
+	changeEvent := StatefulsetChangeEvent{
 		SsName:    ssName,
 		Namespace: namespace,
 		PodName:   podName,
 		EventType: event,
 		Action:    action,
 	}
-	message, _ := json.Marshal(transformation)
+	message, _ := json.Marshal(changeEvent)
 
 	recorder.Eventf(ref, api.EventTypeNormal, "StatefulSetUpdate", "%s", string(message))
 }
@@ -151,15 +148,14 @@ func RecordJobPodEvent(recorder record.EventRecorder, jobName, namespace, podNam
 		Namespace: namespace,
 	}
 
-	glog.V(2).Infof("Recording %s event message for Job %s", event, jobName)
-	transformation := JobTransformation{
+	changeEvent := JobChangeEvent{
 		JobName:   jobName,
 		Namespace: namespace,
 		PodName:   podName,
 		EventType: event,
 		Action:    action,
 	}
-	message, _ := json.Marshal(transformation)
+	message, _ := json.Marshal(changeEvent)
 
 	recorder.Eventf(ref, api.EventTypeNormal, "JobUpdate", "%s", string(message))
 }

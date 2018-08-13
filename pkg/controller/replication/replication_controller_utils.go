@@ -51,12 +51,14 @@ func (rm *ReplicationManager) updateReplicationControllerStatus(c v1core.Replica
 
 	// Variables indicate whethter the RC becomes ready/unready
 	var beReady, beNotReady bool
-	if newStatus.ReadyReplicas == *rc.Spec.Replicas && newStatus.ReadyReplicas > *rc.Spec.Replicas {
+	if newStatus.ReadyReplicas == *rc.Spec.Replicas && newStatus.ReadyReplicas > rc.Status.ReadyReplicas {
 		// ReadyReplicas increased to spec.Replicas. RC is ready.
+		glog.V(6).Info("%v beReady!", rc.Name)
 		beReady = true
-	} else if rc.Status.ReadyReplicas == *rc.Spec.Replicas && newStatus.ReadyReplicas > *rc.Spec.Replicas {
+	} else if rc.Status.ReadyReplicas == *rc.Spec.Replicas && newStatus.ReadyReplicas < rc.Status.ReadyReplicas {
 		// ReadyReplicas decreased from spec.Replicas. RC is NOT ready.
 		beNotReady = true
+		glog.V(6).Infof("%v beNotReady!", rc.Name)
 	}
 	var getErr, updateErr error
 	var updatedRC *v1.ReplicationController
@@ -72,9 +74,9 @@ func (rm *ReplicationManager) updateReplicationControllerStatus(c v1core.Replica
 		updatedRC, updateErr = c.UpdateStatus(rc)
 		if updateErr == nil {
 			if beReady {
-				podchanges.RecordRCStatusEvent(rm.recorder, rc.Name, rc.Namespace, "RcStatusUpdate", "RcReady")
+				podchanges.RecordRCStatusEvent(rm.recorder, rc.Name, rc.Namespace, "RcStatusUpdate", "RcReady", rc.Labels, rc.Status.ReadyReplicas)
 			} else if beNotReady {
-				podchanges.RecordRCStatusEvent(rm.recorder, rc.Name, rc.Namespace, "RcStatusUpdate", "RcNotReady")
+				podchanges.RecordRCStatusEvent(rm.recorder, rc.Name, rc.Namespace, "RcStatusUpdate", "RcNotReady", rc.Labels, rc.Status.ReadyReplicas)
 			}
 			return updatedRC, nil
 		}

@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/google/cadvisor/cache/memory"
+	"github.com/google/cadvisor/accelerators"
 	"github.com/google/cadvisor/collector"
 	"github.com/google/cadvisor/container"
 	info "github.com/google/cadvisor/info/v1"
@@ -78,6 +79,9 @@ type containerData struct {
 
 	// Runs custom metric collectors.
 	collectorManager collector.CollectorManager
+
+	// nvidiaCollector updates stats for Nvidia GPUs attached to the container.
+	nvidiaCollector accelerators.AcceleratorCollector
 }
 
 // jitter returns a time.Duration between duration and duration + maxFactor * duration,
@@ -554,6 +558,11 @@ func (c *containerData) updateStats() error {
 			}
 		}
 	}
+	var nvidiaStatsErr error
+	if c.nvidiaCollector != nil {
+		// This updates the Accelerators field of the stats struct
+		nvidiaStatsErr = c.nvidiaCollector.UpdateStats(stats)
+	}
 
 	ref, err := c.handler.ContainerReference()
 	if err != nil {
@@ -569,6 +578,9 @@ func (c *containerData) updateStats() error {
 	}
 	if statsErr != nil {
 		return statsErr
+	}
+	if nvidiaStatsErr != nil {
+		return nvidiaStatsErr
 	}
 	return customStatsErr
 }

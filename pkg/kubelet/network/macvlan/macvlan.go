@@ -187,32 +187,12 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 	return nil
 }
 
-func setDownAndRenameLink(linkName string) error {
+func deleteLink(linkName string) error {
 	macvlanIface, err := netlink.LinkByName(linkName)
 	if err != nil {
 		return err
 	}
-	err = netlink.LinkSetDown(macvlanIface)
-	if err != nil {
-		return err
-	}
-	// Rename the link to a random name before recycling,
-	// because lots of same link name may cause kernel crash.
-	randName, err := ip.RandomVethName()
-	if err != nil {
-		glog.Error(err)
-	} else {
-		// If the rename failed, we still want to delete the link
-		err = ip.RenameLink(linkName, randName)
-		if err != nil {
-			glog.Error(err)
-		} else {
-			glog.V(6).Infof("Renamed %v to %v", linkName, randName)
-		}
-	}
-
-	// Delete the link even if renaming failed.
-	return err
+	return netlink.LinkDel(macvlanIface)
 }
 
 // TearDownPod return no error because the macvlan will be deleted if the namespace removed
@@ -238,14 +218,17 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 	}
 
 	err = ns.WithNetNSPath(containerinfo.NetworkSettings.SandboxKey, func(_ ns.NetNS) error {
-		return setDownAndRenameLink(netdev)
+		return deleteLink(netdev)
 	})
 
 	if err == nil {
-		glog.V(6).Infof("Successfully setDownAndRenameLink %v", netdev)
+		glog.V(6).Infof("Successfully deleteLink %v", netdev)
+	} else {
+		glog.Errorf("Failed to TearDownPod: %v", err)
 	}
 
-	return err
+
+	return nil
 }
 
 // Deprecated

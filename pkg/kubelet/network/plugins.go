@@ -48,6 +48,9 @@ const (
 	ChangeGateway       = "changeGateWay"
 	// Label for network groups
 	GroupedLabel = "networkgroup"
+	ClusterName = "clustername"
+	Zone = "zone"
+
 )
 
 // Called when the node's Pod CIDR is known when using the

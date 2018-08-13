@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/cadvisor/accelerators"
 	"github.com/google/cadvisor/cache/memory"
 	"github.com/google/cadvisor/collector"
 	"github.com/google/cadvisor/container"
@@ -188,6 +189,7 @@ func New(memoryCache *memory.InMemoryCache, sysfs sysfs.SysFs, maxHousekeepingIn
 		containerWatchers:        []watcher.ContainerWatcher{},
 		eventsChannel:            eventsChannel,
 		collectorHttpClient:      collectorHttpClient,
+		nvidiaManager: &accelerators.NvidiaManager{},
 	}
 
 	machineInfo, err := machine.Info(sysfs, fsInfo, inHostNamespace)
@@ -233,6 +235,7 @@ type manager struct {
 	containerWatchers        []watcher.ContainerWatcher
 	eventsChannel            chan watcher.ContainerEvent
 	collectorHttpClient      *http.Client
+	nvidiaManager            accelerators.AcceleratorManager
 }
 
 // Start the container manager.
@@ -280,6 +283,9 @@ func (self *manager) Start() error {
 		return nil
 	}
 
+	// Setup collection of nvidia GPU metrics if any of them are attached to the machine.
+	self.nvidiaManager.Setup()
+
 	// Create root and then recover all containers.
 	err = self.createContainer("/", watcher.Raw)
 	if err != nil {
@@ -309,6 +315,7 @@ func (self *manager) Start() error {
 }
 
 func (self *manager) Stop() error {
+	defer self.nvidiaManager.Destroy()
 	// Stop and wait on all quit channels.
 	for i, c := range self.quitChannels {
 		// Send the exit signal and wait on the thread to exit (by closing the channel).
@@ -876,6 +883,18 @@ func (m *manager) createContainerLocked(containerName string, watchSource watche
 	cont, err := newContainerData(containerName, m.memoryCache, handler, logUsage, collectorManager, m.maxHousekeepingInterval, m.allowDynamicHousekeeping)
 	if err != nil {
 		return err
+	}
+
+	devicesCgroupPath, err := handler.GetCgroupPath("devices")
+	if err != nil {
+		glog.Warningf("Error getting devices cgroup path %v: %v", devicesCgroupPath, err)
+	} else {
+		cont.nvidiaCollector, err = m.nvidiaManager.GetCollector(devicesCgroupPath)
+		if err != nil {
+			glog.V(4).Infof("GPU metrics may be unavailable/incomplete for container %q: %v", cont.info.Name, err)
+		} else {
+			glog.V(6).Infof("Successfully get nvidiaCollector for %v", devicesCgroupPath)
+		}
 	}
 
 	// Add collectors
