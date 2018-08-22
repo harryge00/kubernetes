@@ -51,7 +51,7 @@ type macvlanNetworkPlugin struct {
 	nonMasqueradeCIDR string
 
 	icmpMessage []byte
-	master      string
+	hostInterfaceName      string
 	mode        string
 	mtu         int
 }
@@ -77,7 +77,7 @@ func NewPlugin(pluginDir string, client dockertools.DockerInterface) network.Net
 			continue
 		}
 		macvlanPlug.mode = conf.Network.Type
-		macvlanPlug.master = conf.Network.Name
+		macvlanPlug.hostInterfaceName = conf.Network.Name
 		break
 	}
 	pingMessage := icmp.Message{
@@ -100,8 +100,8 @@ func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componen
 	plugin.mtu = mtu
 
 	plugin.nonMasqueradeCIDR = nonMasqueradeCIDR
-	pluginConf := fmt.Sprintf("macvlan mode: %v, master: %v, mtu: %v, macvlanName: %s, host: %v, netdev: %s, typer: %s, non-masquerade-cidr: %s ",
-		plugin.mode, plugin.master, plugin.mtu, plugin.macvlanName, plugin.host, plugin.netdev, plugin.typer, plugin.nonMasqueradeCIDR)
+	pluginConf := fmt.Sprintf("macvlan mode: %v, hostInterfaceName: %v, mtu: %v, macvlanName: %s, host: %v, netdev: %s, typer: %s, non-masquerade-cidr: %s ",
+		plugin.mode, plugin.hostInterfaceName, plugin.mtu, plugin.macvlanName, plugin.host, plugin.netdev, plugin.typer, plugin.nonMasqueradeCIDR)
 	glog.Info("Macvlan config: ", pluginConf)
 
 	return nil
@@ -328,21 +328,22 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 	if err != nil {
 		return nil, err
 	}
-	m, err := netlink.LinkByName(plugin.master)
+	m, err := netlink.LinkByName(plugin.hostInterfaceName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to lookup master %q: %v", plugin.master, err)
+		return nil, fmt.Errorf("failed to lookup hostInterfaceName %q: %v", plugin.hostInterfaceName, err)
 	}
 
-	tmpName, err := ip.RandomVethName()
+	// We generate a random veth name to avoid name collision (many "eth1" on the same host)
+	randomVethName, err := ip.RandomVethName()
 	if err != nil {
 		glog.Errorf("failed to random name %v", err)
 		return nil, err
 	}
-
+	glog.V(6).Infof("randomVethName %v for ip: %v", randomVethName, ipv4str)
 	mv := &netlink.Macvlan{
 		LinkAttrs: netlink.LinkAttrs{
 			MTU:         plugin.mtu,
-			Name:        tmpName,
+			Name:        randomVethName,
 			ParentIndex: m.Attrs().Index,
 			Namespace:   netlink.NsFd(int(netNamespace.Fd())),
 		},
@@ -354,7 +355,7 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 	}
 
 	err = netNamespace.Do(func(_ ns.NetNS) error {
-		err := ip.RenameLink(tmpName, netdev)
+		err := ip.RenameLink(randomVethName, netdev)
 		macvlan.Name = netdev
 
 		if err != nil {
@@ -385,6 +386,8 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 
 		if err != nil {
 			glog.Warningf("failed to set link up %v", err)
+			delLinkErr := netlink.LinkDel(mv)
+			glog.V(6).Infof("delLinkErr: %v", delLinkErr)
 			return err
 		}
 

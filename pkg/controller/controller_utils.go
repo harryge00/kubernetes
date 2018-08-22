@@ -344,6 +344,9 @@ func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, 
 		}
 		pod.Spec.NodeSelector["location"] = location
 	}
+	if pod.Labels["zone"] != "" {
+		pod.Spec.NodeSelector["zone"] = pod.Labels["zone"]
+	}
 	glog.V(6).Infof("Get IP: %v, Mask: %v, ForPod: %v ", ip, mask, pod.ObjectMeta)
 	return
 }
