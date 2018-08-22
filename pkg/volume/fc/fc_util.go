@@ -26,6 +26,7 @@ import (
 
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/volume"
+	"os/exec"
 )
 
 type ioHandler interface {
@@ -59,7 +60,7 @@ func findMultipathDeviceMapper(disk string, io ioHandler) string {
 		for _, f := range dirs {
 			name := f.Name()
 			if strings.HasPrefix(name, "dm-") {
-				glog.V(1).Infof("FormatAndMount: ", sys_path + name + "/slaves/" + disk)
+				glog.V(7).Infof("FormatAndMount: ", sys_path+name+"/slaves/"+disk)
 				if _, err1 := io.Lstat(sys_path + name + "/slaves/" + disk); err1 == nil {
 					return "/dev/" + name
 				}
@@ -106,12 +107,13 @@ blacklist {
 }
 
 // rescan scsi bus
-func scsiHostRescan(io ioHandler) {
+func scsiHostRescan(io ioHandler, content string) {
+	glog.Infoln("fc_tranport: we will rescan all")
 	scsi_path := "/sys/class/scsi_host/"
 	if dirs, err := io.ReadDir(scsi_path); err == nil {
 		for _, f := range dirs {
 			name := scsi_path + f.Name() + "/scan"
-			data := []byte("- - -")
+			data := []byte(content)
 			io.WriteFile(name, data, 0666)
 		}
 	}
@@ -132,28 +134,92 @@ func searchDisk(wwns []string, lun string, io ioHandler) (string, string) {
 	disk := ""
 	dm := ""
 
-	rescaned := false
+	rescaned := 3
 	// two-phase search:
 	// first phase, search existing device path, if a multipath dm is found, exit loop
 	// otherwise, in second phase, rescan scsi bus and search again, return with any findings
 	for true {
 		for _, wwn := range wwns {
 			disk, dm = findDisk(wwn, lun, io)
-			// if multipath device is found, break
-			if dm != "" {
-				break
+			// if multipath device is found, and multipath slaves equal 4, break
+			dmNames := strings.Split(dm,"/")
+			if dm != "" && len(dmNames) == 3 {
+				slaves, err := io.ReadDir("/sys/block/" + dmNames[2] + "/slaves/")
+				if err == nil && len(slaves) == 4 {
+					break
+				} else {
+					// slaves is less than 4, rescan
+					if err != nil {
+						glog.Infoln("fc_transport: find dm slave err: " + err.Error())
+					} else if len(slaves) < 4 {
+						glog.Infoln("fc_transport: find dm slaves number is lower than 4, dm is " + dm)
+					}
+				}
 			}
 		}
 		// if a dm is found, exit loop
-		if rescaned || dm != "" {
+		if rescaned < 0 || dm != "" {
 			break
 		}
 		// rescan and search again
 		// create multipath conf if it is not there
 		createMultipathConf("/etc/multipath.conf", io)
 		// rescan scsi bus
-		scsiHostRescan(io)
-		rescaned = true
+		rescaned = rescaned - 1
+		fc_host := ""
+		channel := ""
+		target := ""
+		for _, wwn := range wwns {
+			glog.V(1).Infoln("fc_transport command: ", "grep -ilG "+wwn+"  /sys/class/fc_transport/target*/port_name")
+			command := exec.Command("grep -ilG " + wwn + "  /sys/class/fc_transport/target*/port_name")
+			output, err := command.CombinedOutput()
+			if err == nil && string(output) != "" {
+				glog.V(1).Infoln("fc_transport file: ", output)
+				tmp := string(output)
+				res := strings.Split(tmp, "/")
+				if len(res) != 5 {
+					continue
+				} else {
+					res := strings.TrimLeft(res[3], "target")
+					nums := strings.Split(res, ":")
+					if len(nums) == 3 {
+						fc_host = nums[0]
+						channel = nums[1]
+						target = nums[2]
+						path := "/sys/class/scsi_host/host" + fc_host + "/scan"
+						_, err := os.Stat(path)
+						if err == nil {
+							content := channel + " " + target + " " + lun
+							command := exec.Command("echo '" + content + "' > " + path)
+							_, err := command.CombinedOutput()
+							glog.V(6).Infoln("fc_transport: scan path " + path +" with " + "echo '" + content + "' > " + path)
+							if err != nil {
+								glog.V(6).Infoln("fc_transport: scan path failed " + path +" with " + "echo '" + content + "' > " + path)
+							}
+							}
+					}
+				}
+			} else {
+				if err != nil {
+					content := "- - " + lun
+					scsiHostRescan(io, content)
+				}
+			}
+		}
+
+		for _, wwn := range wwns {
+			disk, dm = findDisk(wwn, lun, io)
+			if dm != "" {
+				break
+			}
+		}
+		dmNames := strings.Split(dm,"/")
+		if dm != "" && len(dmNames) == 3 {
+			slaves, err := io.ReadDir("/sys/block/" + dmNames[2] + "/slaves/")
+			if len(slaves) != 4 || err != nil {
+				scsiHostRescan(io, "- - -")
+			}
+		}
 	}
 	return disk, dm
 }
@@ -175,7 +241,7 @@ func (util *FCUtil) AttachDisk(b fcDiskMounter) error {
 	} else {
 		devicePath = disk
 	}
-	glog.Infof("xufeixufei target DevicePath = %v", devicePath)
+	glog.V(7).Infof("xufeixufei target DevicePath = %v", devicePath)
 	// mount it
 	globalPDPath := b.manager.MakeGlobalPDName(*b.fcDisk)
 	noMnt, err := b.mounter.IsLikelyNotMountPoint(globalPDPath)
@@ -190,10 +256,20 @@ func (util *FCUtil) AttachDisk(b fcDiskMounter) error {
 
 	err = b.mounter.FormatAndMount(devicePath, globalPDPath, b.fsType, nil)
 	if err != nil {
-		return fmt.Errorf("fc: failed to mount fc volume %s [%s] to %s, error %v", devicePath, b.fsType, globalPDPath, err)
+		return fmt.Errorf("fc: fail_mount fc volume %s [%s] to %s, error %v", devicePath, b.fsType, globalPDPath, err)
+	} else {
+		if b.fsType == "ext4" || b.fsType == "" {
+			output, err := b.plugin.execCommand("resize2fs", []string{devicePath})
+			glog.V(6).Infof("resize2fs %v: %v/%v", b.volumeID, string(output), err)
+			if err != nil {
+				return err
+			} else {
+				return nil
+			}
+		} else {
+			return nil
+		}
 	}
-
-	return err
 }
 
 func (util *FCUtil) DetachDisk(c fcDiskUnmounter, mntPath string) error {

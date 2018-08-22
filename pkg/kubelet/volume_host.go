@@ -28,6 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/io"
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
+	"sync"
 )
 
 // NewInitializedVolumePluginMgr returns a new instance of
@@ -155,4 +156,8 @@ func (kvh *kubeletVolumeHost) GetVolumeType() string {
 
 func (kvh *kubeletVolumeHost) GetPodDir(podUID string) string {
 	return kvh.kubelet.getPodDir(types.UID(podUID))
+}
+
+func (kvh *kubeletVolumeHost) GetFcMutex() *sync.Mutex {
+	return kvh.kubelet.fcmutex
 }

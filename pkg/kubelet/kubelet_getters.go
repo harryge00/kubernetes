@@ -260,6 +260,9 @@ func (kl *Kubelet) getPodVolumePathListFromDisk(podUID types.UID) ([]string, err
 	}
 	for _, volumePluginDir := range volumePluginDirs {
 		volumePluginName := volumePluginDir.Name()
+		if volumePluginName == "dellvolumeinfo" {
+			return []string{}, fmt.Errorf("We find a remining dellvolumeinfo, dell volume may not cleanup")
+		}
 		volumePluginPath := filepath.Join(podVolDir, volumePluginName)
 		volumeDirs, err := util.ReadDirNoStat(volumePluginPath)
 		if err != nil {
@@ -271,8 +274,3 @@ func (kl *Kubelet) getPodVolumePathListFromDisk(podUID types.UID) ([]string, err
 	}
 	return volumes, nil
 }
-/*
-func (kl *Kubelet) GetKubelet() *Kubelet {
-	return kl
-}
-*/

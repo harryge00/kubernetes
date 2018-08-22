@@ -83,7 +83,7 @@ type AttachInfo struct {
 func GetVolumeStatus(remoteServerAddress string, volumeID string) (podID string, nodeID string, provider_misc ProviderMisc, err error) {
 	glog.V(1).Info("RemoteAttach/RemoteDetach Try To Get Volume Infomation")
 	httpClient := http.Client{}
-	httpClient.Timeout = 3 * time.Second
+	httpClient.Timeout = 30 * time.Second
 	requestUrl := remoteServerAddress + "/v1/volume/info?volid=" + volumeID
 	response, err := httpClient.Get(requestUrl)
 	if err != nil {
@@ -125,7 +125,7 @@ func FCAttachToServer(remoteVolumeServerAddress, instanceID, volumeID string) (l
 	glog.V(1).Info("FibreChannel RemoteAttach Begin")
 	glog.V(1).Info("RemoteAttach FibreChannel: " + instanceID + ";" + remoteVolumeServerAddress + ";" + volumeID)
 	httpClient := http.Client{}
-	httpClient.Timeout = 3 * time.Second
+	httpClient.Timeout = 30 * time.Second
 	requestUrl := remoteVolumeServerAddress + "/v1/volume/attach/" + volumeID
 	glog.V(1).Info("RemoteAttach FibreChannel URL : " + requestUrl )
 	requestData := "{\"instance\":\"" + instanceID  + "\",\"protocol\":\"FibreChannel\"}"
@@ -186,7 +186,7 @@ func LockToPod(remoteVolumeServerAddress, volumeID, podID string) error {
 	glog.V(1).Info("FibreChannel LockToPod Begin")
 	glog.V(1).Info("FibreChannel LockToPod Infomation: PodID=%v VolumeServer=%v VolumeID=%v", podID, remoteVolumeServerAddress, volumeID)
 	httpClient := http.Client{}
-	httpClient.Timeout = 3 * time.Second
+	httpClient.Timeout = 30 * time.Second
 	requestUrl := remoteVolumeServerAddress + "/v1/volume/lock"
 	requestData := "{\"id\":\"" + volumeID  + "\",\"locker\":\"" + podID + "\"}"
 	glog.V(1).Info("FibreChannel LockToPod RequestInfo: %v", requestData)
@@ -208,7 +208,7 @@ func DetachFromServer(remoteVolumeServerAddress, instanceID, volumeID string) er
 	glog.V(1).Info("FibreChannel RemoteDetach Begin")
 	glog.V(1).Info("FibreChannel RemoteDetach FibreChannel: " + instanceID + ";" + remoteVolumeServerAddress + ";" + volumeID)
 	httpClient := http.Client{}
-	httpClient.Timeout = 3 * time.Second
+	httpClient.Timeout = 30 * time.Second
 	requestUrl := remoteVolumeServerAddress + "/v1/volume/detach/" + volumeID
 	response, err := httpClient.Post(requestUrl,"application/json", bytes.NewReader([]byte("")))
 	if err != nil {
@@ -230,7 +230,7 @@ func DetachFromServer(remoteVolumeServerAddress, instanceID, volumeID string) er
 func UnlockFromPod(remoteVolumeServerAddress, volumeID, podID string) error {
 	glog.V(1).Info("FibreChannel UnlockFromPod Begin: VolumeID=%v PodID=%v", volumeID, podID)
 	httpClient := http.Client{}
-	httpClient.Timeout = 3 * time.Second
+	httpClient.Timeout = 30 * time.Second
 	requestUrl := remoteVolumeServerAddress + "/v1/volume/unlock"
 	requestData := "{\"id\":\"" + volumeID  + "\",\"locker\":\"" + podID + "\"}"
 	glog.V(1).Info("FibreChannel UnlockFromPod RequestContent: %v", requestData)

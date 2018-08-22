@@ -501,6 +501,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		experimentalHostUserNamespaceDefaulting: utilfeature.DefaultFeatureGate.Enabled(features.ExperimentalHostUserNamespaceDefaultingGate),
 		sampleWindow:                            int32(kubeCfg.SampleWindow),
 		remoteVolumeServerAddr:                  kubeCfg.RemoteVolumeServerAddr,
+		fcmutex:                                 &sync.Mutex{},
 	}
 
 	secretManager := secret.NewCachingSecretManager(
@@ -1163,6 +1164,8 @@ type Kubelet struct {
 	diskType string
 
 	remoteVolumeServerAddr string
+
+	fcmutex *sync.Mutex
 }
 
 /*
@@ -1494,19 +1497,6 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 		}
 	}
 
-	/*
-		podInfraContainerStatus := podStatus.FindContainerStatusByName(leaky.PodInfraContainerName)
-		if podInfraContainerStatus == nil || podInfraContainerStatus.State != kubecontainer.ContainerStateRunning {
-			glog.V(4).Infof("Found pod infra container for %q is not at runing state", format.Pod(pod))
-			glog.V(4).Infof("Change the Pod ConditionStatus for %q ", format.Pod(pod))
-			for l, c := range apiPodStatus.Conditions {
-				if c.Type == v1.PodReady {
-					apiPodStatus.Conditions[l].Status = v1.ConditionFalse
-				}
-			}
-		}
-
-	*/
 	// Update status in the status manager
 	kl.statusManager.SetPodStatus(pod, apiPodStatus)
 

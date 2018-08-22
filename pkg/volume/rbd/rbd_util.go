@@ -310,8 +310,8 @@ func (util *RBDUtil) AttachDisk(b rbdMounter) error {
 	if err = b.mounter.FormatAndMount(devicePath, globalPDPath, b.fsType, nil); err != nil {
 		err = fmt.Errorf("rbd: failed to mount rbd volume %s [%s] to %s, error %v", devicePath, b.fsType, globalPDPath, err)
 	} else {
-		if b.fsType == "ext4" || b.fsType == "" {
-			output, err := b.plugin.execCommand("resize2fs", []string{devicePath})
+		if b.fsType == "ext4" || b.fsType == "" { //默认为ext4
+			output, err = b.plugin.execCommand("resize2fs", []string{devicePath})
 			glog.V(6).Infof("resize2fs %v: %v/%v", b.Image, string(output), err)
 		}
 	}
