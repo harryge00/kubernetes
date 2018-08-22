@@ -892,8 +892,6 @@ func (m *manager) createContainerLocked(containerName string, watchSource watche
 		cont.nvidiaCollector, err = m.nvidiaManager.GetCollector(devicesCgroupPath)
 		if err != nil {
 			glog.V(4).Infof("GPU metrics may be unavailable/incomplete for container %q: %v", cont.info.Name, err)
-		} else {
-			glog.V(6).Infof("Successfully get nvidiaCollector for %v", devicesCgroupPath)
 		}
 	}
 
