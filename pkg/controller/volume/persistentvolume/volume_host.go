@@ -27,6 +27,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/io"
 	"k8s.io/kubernetes/pkg/util/mount"
 	vol "k8s.io/kubernetes/pkg/volume"
+	"sync"
 )
 
 // VolumeHost interface implementation for PersistentVolumeController.
@@ -101,4 +102,8 @@ func (kvh *PersistentVolumeController) GetVolumeType() string {
 
 func (kvh *PersistentVolumeController) GetPodDir(podUID string) string {
 	return ""
+}
+
+func (kvh *PersistentVolumeController) GetFcMutex() *sync.Mutex {
+	return nil
 }

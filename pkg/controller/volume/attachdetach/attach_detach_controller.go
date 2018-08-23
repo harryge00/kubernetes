@@ -46,6 +46,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util/operationexecutor"
 	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
+	"sync"
 )
 
 const (
@@ -423,4 +424,8 @@ func (adc *attachDetachController) GetVolumeType() string {
 
 func (kvh *attachDetachController) GetPodDir(podUID string) string {
 	return ""
+}
+
+func (kvh *attachDetachController) GetFcMutex() *sync.Mutex {
+	return nil
 }
