@@ -813,8 +813,8 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		return err
 	}
 	// Get macvlan IP for grouped pod.
-	ip, _, err := AddIPMaskIfPodLabeled(pod, namespace)
-	if err != nil {
+	ip, _, getIPErr := AddIPMaskIfPodLabeled(pod, namespace)
+	if getIPErr != nil {
 		glog.Errorf("Failed to add ip and mask for pod %v: %v", pod.Name, err)
 	}
 
@@ -833,20 +833,18 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		}
 		return fmt.Errorf("unable to create pods: %v", err)
 	} else {
-		accessor, err := meta.Accessor(object)
-		if err != nil {
-			glog.Errorf("parentObject does not have ObjectMeta, %v", err)
-			return nil
-		}
-		glog.V(4).Infof("Controller %v created pod %v", accessor.GetName(), newPod.Name)
+		glog.V(4).Infof("Controller %v created pod %v", controllerRef.Name, newPod.Name)
 		switch controllerRef.Kind {
 		case "ReplicationController":
 			util.RecordRCPodEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "RcPodAdd", "RcPodAdd")
 		case "Job":
 			util.RecordJobPodEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "JobPodAdd", "JobPodAdd")
 		}
-
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulCreatePodReason, "Created pod: %v", newPod.Name)
+		// Send events if we did not get IP successfully while creating Pods successfully.
+		if getIPErr != nil {
+			r.Recorder.Event(newPod, v1.EventTypeWarning, "FailedGetIP", getIPErr.Error())
+		}
 	}
 	return nil
 }

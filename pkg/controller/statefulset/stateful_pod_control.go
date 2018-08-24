@@ -85,13 +85,13 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 		spc.recordPodEvent("create", set, pod, err)
 		return err
 	}
-	ip, _, addIPErr := controller.AddIPMaskIfPodLabeled(pod, pod.Namespace)
-	if addIPErr != nil {
-		glog.Errorf("Error add IP for statefulset %v: %v", set.Name, addIPErr)
+	ip, _, getIPErr := controller.AddIPMaskIfPodLabeled(pod, pod.Namespace)
+	if getIPErr != nil {
+		glog.Errorf("Error add IP for statefulset %v: %v", set.Name, getIPErr)
 	}
 
 	// If we created the PVCs attempt to create the Pod
-	_, err := spc.client.Core().Pods(set.Namespace).Create(pod)
+	newPod, err := spc.client.Core().Pods(set.Namespace).Create(pod)
 	if err != nil && ip != "" {
 		releaseErr := controller.ReleaseGroupedIP(pod.Namespace, pod.ObjectMeta.Labels[network.GroupedLabel], ip)
 		glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
@@ -103,6 +103,10 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 	// Send events for servicemanager.
 	util.RecordStatefulSetPodEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodAdd")
 
+	// Send events if we did not get IP successfully while creating Pods successfully.
+	if getIPErr != nil {
+		spc.recorder.Event(newPod, v1.EventTypeWarning, "FailedGetIP", getIPErr.Error())
+	}
 	spc.recordPodEvent("create", set, pod, err)
 	return err
 }

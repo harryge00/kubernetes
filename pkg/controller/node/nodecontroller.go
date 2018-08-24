@@ -260,7 +260,7 @@ func NewNodeController(
 		clusterCIDR:                     clusterCIDR,
 		serviceCIDR:                     serviceCIDR,
 		allocateNodeCIDRs:               allocateNodeCIDRs,
-		forcefullyDeletePod:             func(p *v1.Pod) error { return forcefullyDeletePod(kubeClient, p) },
+		forcefullyDeletePod:             func(p *v1.Pod) error { return forcefullyDeletePod(recorder, kubeClient, p) },
 		nodeExistsInCloudProvider:       func(nodeName types.NodeName) (bool, error) { return nodeExistsInCloudProvider(cloud, nodeName) },
 		evictionLimiterQPS:              evictionLimiterQPS,
 		secondaryEvictionLimiterQPS:     secondaryEvictionLimiterQPS,
