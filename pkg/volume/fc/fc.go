@@ -125,9 +125,9 @@ func (plugin *fcPlugin) newMounterInternal(spec *volume.Spec, podUID types.UID, 
 		glog.V(1).Infof("Try Get RemoteVolumeID from Spec.Volme: RemoteVolumeID=%v", remoteVolumeID)
 	}
 
-	if remoteVolumeID == "" {
-		return nil, fmt.Errorf("Volume Spec has nil FC.RemoteVolumeID")
-	}
+	//if remoteVolumeID == "" {
+	//	return nil, fmt.Errorf("Volume Spec has nil FC.RemoteVolumeID")
+	//}
 
 	return &fcDiskMounter{
 		fcDisk: &fcDisk{
@@ -379,6 +379,11 @@ func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
 	// diskSetUp checks mountpoints and prevent repeated calls
 	b.fcmutex.Lock()
 	defer b.fcmutex.Unlock()
+
+	if b.volumeID == "" {
+		return fmt.Errorf("Empty FC.RemoteVolumeID")
+	}
+
 	_, err := Lock(b)
 	if err != nil {
 		glog.Errorf(err.Error())
