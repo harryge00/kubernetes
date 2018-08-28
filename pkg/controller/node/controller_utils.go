@@ -101,11 +101,11 @@ func deletePods(kubeClient clientset.Interface, recorder record.EventRecorder, n
 		if len(pod.OwnerReferences) > 0 {
 			switch pod.OwnerReferences[0].Kind {
 			case "ReplicationController":
-				podchanges.RecordRCPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, string(pod.UID), "RcPodDelete", "RcPodDelete")
+				podchanges.RecordRCPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, pod.Name, "RcPodDelete", "RcPodDelete")
 			case "Job":
-				podchanges.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, string(pod.UID), "JobPodDelete", "JobPodDelete")
+				podchanges.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, pod.Name, "JobPodDelete", "JobPodDelete")
 			case "StatefulSet":
-				podchanges.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, string(pod.UID), "StatefulSetPodDelete", "StatefulSetPodDelete")
+				podchanges.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, pod.Name, "StatefulSetPodDelete", "StatefulSetPodDelete")
 			}
 		}
 		remaining = true
@@ -146,16 +146,16 @@ func forcefullyDeletePod(recorder record.EventRecorder, c clientset.Interface, p
 			glog.Errorf("Failed to release %v's IP in forcefullyDeletePod: %v", pod.Name, deleteIpErr)
 		}
 		glog.V(4).Infof("forceful deletion of %s succeeded", pod.Name)
-		if len(pod.OwnerReferences) > 0 {
-			switch pod.OwnerReferences[0].Kind {
-			case "ReplicationController":
-				podchanges.RecordRCPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, string(pod.UID), "RcPodDelete", "RcPodDelete")
-			case "Job":
-				podchanges.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, string(pod.UID), "JobPodDelete", "JobPodDelete")
-			case "StatefulSet":
-				podchanges.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, string(pod.UID), "StatefulSetPodDelete", "StatefulSetPodDelete")
-			}
-		}
+		//if len(pod.OwnerReferences) > 0 {
+		//	switch pod.OwnerReferences[0].Kind {
+		//	case "ReplicationController":
+		//		podchanges.RecordRCPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, string(pod.UID), "RcPodDelete", "RcPodDelete")
+		//	case "Job":
+		//		podchanges.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, string(pod.UID), "JobPodDelete", "JobPodDelete")
+		//	case "StatefulSet":
+		//		podchanges.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, string(pod.UID), "StatefulSetPodDelete", "StatefulSetPodDelete")
+		//	}
+		//}
 	} else {
 		glog.Errorf("Failed to delete Pod: %v:%v %v", pod.Namespace, pod.Name, err)
 	}

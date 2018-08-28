@@ -871,9 +871,9 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 			}
 			switch pod.OwnerReferences[0].Kind {
 			case "ReplicationController":
-				util.RecordRCPodEvent(r.Recorder, accessor.GetName(), namespace, podID, "RcPodDelete", "RcPodDelete")
+				util.RecordRCPodEvent(r.Recorder, accessor.GetName(), namespace, pod.Name, "RcPodDelete", "RcPodDelete")
 			case "Job":
-				util.RecordJobPodEvent(r.Recorder, accessor.GetName(), namespace, podID, "JobPodDelete", "JobPodDelete")
+				util.RecordJobPodEvent(r.Recorder, accessor.GetName(), namespace, pod.Name, "JobPodDelete", "JobPodDelete")
 			}
 			r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 		}

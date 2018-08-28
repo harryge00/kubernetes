@@ -499,6 +499,7 @@ func (nc *NodeController) doEvictionPass() {
 				zone := utilnode.GetZoneKey(node)
 				EvictionsNumber.WithLabelValues(zone).Inc()
 			}
+			glog.V(6).Infof("Should checking canEvictPodsLabel for %v", node.Name)
 			if node.Labels[nc.canEvictPodsLabel] != "true" {
 				glog.Warningf("%v is not true for node %v! doEvictionPass in next loop.", nc.canEvictPodsLabel, node.Name)
 				return false, nc.podEvictionTimeout
