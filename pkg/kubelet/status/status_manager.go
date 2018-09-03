@@ -459,13 +459,13 @@ func (m *manager) recorderPodEvents(pod *v1.Pod, oldStatus v1.PodStatus, newStat
 		case "StatefulSet":
 			if oldPodReady != newPodReady {
 				if newPodReady {
-					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodReady")
+					util.RecordPodEvent(m.recorder, pod, "StatefulSetUpdate", "StatefulSetPodReady")
 				} else {
-					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
+					util.RecordPodEvent(m.recorder, pod, "StatefulSetUpdate", "StatefulSetPodNotReady")
 				}
 			} else {
 				if newPodReady && IsPodContainersDiff(&pod.Spec, pod.Status.ContainerStatuses, oldStatus.ContainerStatuses) {
-					util.RecordStatefulSetPodEvent(m.recorder, ref.Name, pod.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodNotReady")
+					util.RecordPodEvent(m.recorder, pod, "StatefulSetUpdate", "StatefulSetPodNotReady")
 				}
 			}
 		}

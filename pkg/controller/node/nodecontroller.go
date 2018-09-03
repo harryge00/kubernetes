@@ -501,7 +501,7 @@ func (nc *NodeController) doEvictionPass() {
 			}
 			glog.V(6).Infof("Should checking canEvictPodsLabel for %v", node.Name)
 			if node.Labels[nc.canEvictPodsLabel] != "true" {
-				glog.Warningf("%v is not true for node %v! doEvictionPass in next loop.", nc.canEvictPodsLabel, node.Name)
+				glog.V(6).Infof("%v is not true for node %v! doEvictionPass in next loop.", nc.canEvictPodsLabel, node.Name)
 				return false, nc.podEvictionTimeout
 			}
 			nodeUid, _ := value.UID.(string)

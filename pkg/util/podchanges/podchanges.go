@@ -5,7 +5,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api"
 
+	"github.com/golang/glog"
 	clientv1 "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/api/v1"
 )
 
 // Both RcPodChange and RcStatusChange will use it.
@@ -19,6 +21,7 @@ type RcChangeEvent struct {
 	ReadyReplicas int32  `json:"readyReplicas,omitempty"`
 }
 
+// Depracated
 type StatefulsetChangeEvent struct {
 	EventType     string `json:"eventType,omitempty"`
 	Namespace     string `json:"namespace,omitempty"`
@@ -44,6 +47,46 @@ type RcAutoScaleInfo struct {
 	CurrentNum int32  `json:"currentNum,omitempty"`
 	DesiredNum int32  `json:"desiredNum,omitempty"`
 	Status     string `json:"status,omitempty"`
+}
+
+type PodChangeEvent struct {
+	EventType string `json:"eventType,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	PodName   string `json:"podName,omitempty"`
+	SsName    string `json:"ssName,omitempty"`
+	RcName    string `json:"rcName,omitempty"`
+	Action    string `json:"action,omitempty"`
+	JobName   string `json:"jobName,omitempty"`
+	Room      string `json:"room,omitempty"`
+}
+
+func RecordPodEvent(recorder record.EventRecorder, pod *v1.Pod, event, action string) {
+	if len(pod.OwnerReferences) != 1 {
+		glog.Warningf("%v/%v's OwnerReferences is illegal!", pod.Namespace, pod.Name)
+		return
+	}
+	kind := pod.OwnerReferences[0].Kind
+	podChangeEvent := PodChangeEvent{
+		Namespace: pod.Namespace,
+		PodName:   pod.Name,
+		EventType: event,
+		Action:    action,
+	}
+	var reason string
+	switch kind {
+	case "ReplicationController":
+		podChangeEvent.RcName = pod.OwnerReferences[0].Name
+		reason = "RcUpdate"
+	case "StatefulSet":
+		podChangeEvent.SsName = pod.OwnerReferences[0].Name
+		reason = "StatefulSetStatusUpdate"
+	case "Job":
+		podChangeEvent.JobName = pod.OwnerReferences[0].Name
+		reason = "JobUpdate"
+	}
+	message, _ := json.Marshal(podChangeEvent)
+
+	recorder.Event(pod, api.EventTypeNormal, reason, string(message))
 }
 
 func RecorcRCAutoScaleEvent(recorder record.EventRecorder, rcName, namespace, eventType string, currentNum, desiredNum int32, status string) {
@@ -123,7 +166,8 @@ func RecordStatefulSetStatusEvent(recorder record.EventRecorder, ssName, namespa
 	recorder.Eventf(ref, api.EventTypeNormal, "StatefulSetStatusUpdate", "%s", string(message))
 }
 
-func RecordStatefulSetPodEvent(recorder record.EventRecorder, ssName, namespace, podName, event, action string) {
+// Depracated: use RecordPodEvent instead.
+func RecordStatefulSetPodEvent(recorder record.EventRecorder, po *v1.Pod, ssName, namespace, event, action string) {
 	ref := &clientv1.ObjectReference{
 		Kind:      "StatefulSet",
 		Name:      ssName,
@@ -132,7 +176,7 @@ func RecordStatefulSetPodEvent(recorder record.EventRecorder, ssName, namespace,
 	changeEvent := StatefulsetChangeEvent{
 		SsName:    ssName,
 		Namespace: namespace,
-		PodName:   podName,
+		PodName:   po.Name,
 		EventType: event,
 		Action:    action,
 	}

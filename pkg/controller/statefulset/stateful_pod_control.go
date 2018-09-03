@@ -101,7 +101,7 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 		return err
 	}
 	// Send events for servicemanager.
-	util.RecordStatefulSetPodEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodAdd")
+	util.RecordPodEvent(spc.recorder, newPod, "StatefulSetUpdate", "StatefulSetPodAdd")
 
 	// Send events if we did not get IP successfully while creating Pods successfully.
 	if getIPErr != nil {
@@ -174,7 +174,7 @@ func (spc *realStatefulPodControl) DeleteStatefulPod(set *apps.StatefulSet, pod 
 		}
 	}
 	// Send events for servicemanager.
-	util.RecordStatefulSetPodEvent(spc.recorder, set.Name, set.Namespace, pod.Name, "StatefulSetUpdate", "StatefulSetPodDelete")
+	util.RecordPodEvent(spc.recorder, pod, "StatefulSetUpdate", "StatefulSetPodDelete")
 
 	return err
 }
