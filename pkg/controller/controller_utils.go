@@ -69,6 +69,13 @@ const (
 	ExpectationsTimeout = 5 * time.Minute
 )
 
+// Env used by APM
+const (
+	APM_SERVICE_NAME   = "DAHUA_APM_SERVICE_NAME"
+	APM_POD_NAME       = "DAHUA_APM_POD_NAME"
+	APM_CONTAINER_NAME = "DAHUA_APM_CONTAINER_NAME"
+)
+
 var UpdateTaintBackoff = wait.Backoff{
 	Steps:    5,
 	Duration: 100 * time.Millisecond,
@@ -246,8 +253,32 @@ func ReleaseGroupedIP(namespace, group, ip string) error {
 	return err
 }
 
+// APM need env for indicating Pod/Container/OwnerReference Name.
+func addEnvForAPM(pod *v1.Pod) {
+	var serviceName string
+	if len(pod.OwnerReferences) > 0 {
+		serviceName = pod.OwnerReferences[0].Name
+	}
+	serviceNameEnv := v1.EnvVar{Name: APM_SERVICE_NAME, Value: serviceName}
+	podNameEnv := v1.EnvVar{
+		Name: APM_POD_NAME,
+		ValueFrom: &v1.EnvVarSource{
+			FieldRef: &v1.ObjectFieldSelector{
+				APIVersion: "v1",
+				FieldPath:  "metadata.name",
+			},
+		},
+	}
+
+	for i := range pod.Spec.Containers {
+		containerNameEnv := v1.EnvVar{Name: APM_CONTAINER_NAME, Value: pod.Spec.Containers[i].Name}
+		pod.Spec.Containers[i].Env = append(pod.Spec.Containers[i].Env, serviceNameEnv, podNameEnv, containerNameEnv)
+	}
+}
+
 func AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip string, mask int, err error) {
 	// No needs to add ips if no label or "ips" has already been added.
+	addEnvForAPM(pod)
 	if pod.Annotations[network.IPAnnotationKey] != "" || pod.Labels[network.NetworkKey] == "" {
 		return
 	}
