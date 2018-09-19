@@ -195,6 +195,17 @@ func (jm *JobController) updatePod(old, cur interface{}) {
 	}
 	if job := jm.getPodJob(curPod); job != nil {
 		jm.enqueueController(job)
+		// Send RcPod events for DHC
+		if !v1.IsPodReady(oldPod) && v1.IsPodReady(curPod) {
+			podchanges.RecordPodEvent(jm.recorder, curPod, "JobUpdate", "JobPodReady")
+		} else if v1.IsPodReady(oldPod) && !v1.IsPodReady(curPod) {
+			// If Pod is complete, send PodSucceed. Otherwise, send PodNotReady
+			if curPod.Status.Phase != v1.PodSucceeded {
+				podchanges.RecordPodEvent(jm.recorder, curPod, "JobUpdate", "JobPodNotReady")
+			} else {
+				podchanges.RecordPodEvent(jm.recorder, curPod, "JobUpdate", string(v1.PodSucceeded))
+			}
+		}
 	}
 	// Only need to get the old job if the labels changed.
 	if !reflect.DeepEqual(curPod.Labels, oldPod.Labels) {

@@ -499,12 +499,16 @@ func (nc *NodeController) doEvictionPass() {
 				zone := utilnode.GetZoneKey(node)
 				EvictionsNumber.WithLabelValues(zone).Inc()
 			}
-			glog.V(6).Infof("Should checking canEvictPodsLabel for %v", node.Name)
+
+			nodeUid, _ := value.UID.(string)
+			glog.V(6).Infof("Should checking %v for %v", nc.canEvictPodsLabel, node.Name)
 			if node.Labels[nc.canEvictPodsLabel] != "true" {
-				glog.V(6).Infof("%v is not true for node %v! doEvictionPass in next loop.", nc.canEvictPodsLabel, node.Name)
+				err := markPodsAsNodeLost(nc.kubeClient, nc.recorder, value.Value, nodeUid, nc.daemonSetStore)
+				if err != nil {
+					glog.Errorf("Failed to markPodsAsNodeLost: %v", err)
+				}
 				return false, nc.podEvictionTimeout
 			}
-			nodeUid, _ := value.UID.(string)
 			remaining, err := deletePods(nc.kubeClient, nc.recorder, value.Value, nodeUid, nc.daemonSetStore)
 			if err != nil {
 				utilruntime.HandleError(fmt.Errorf("unable to evict node %q: %v", value.Value, err))

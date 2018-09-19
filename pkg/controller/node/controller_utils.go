@@ -45,6 +45,39 @@ import (
 	"github.com/golang/glog"
 )
 
+// Mark Pods as NodeLost when the node is not labelled as canEvictPods=true
+func markPodsAsNodeLost(kubeClient clientset.Interface, recorder record.EventRecorder, nodeName, nodeUID string, daemonStore extensionslisters.DaemonSetLister) error {
+	glog.V(6).Infof("To mark pods on %v as NodeLost.", nodeName)
+	selector := fields.OneTermEqualSelector(api.PodHostField, nodeName).String()
+	options := metav1.ListOptions{FieldSelector: selector}
+	pods, err := kubeClient.Core().Pods(metav1.NamespaceAll).List(options)
+	if err != nil {
+		return err
+	}
+
+	var updateErrList []error
+	for _, pod := range pods.Items {
+		// Defensive check, also needed for tests.
+		if pod.Spec.NodeName != nodeName {
+			continue
+		}
+		// Set reason and message in the pod object.
+		if _, err = setPodTerminationReason(kubeClient, recorder, &pod, nodeName); err != nil {
+			if errors.IsConflict(err) {
+				updateErrList = append(updateErrList,
+					fmt.Errorf("update status failed for pod %q: %v", format.Pod(&pod), err))
+				continue
+			}
+		}
+	}
+
+	if len(updateErrList) > 0 {
+		return utilerrors.NewAggregate(updateErrList)
+	}
+
+	return nil
+}
+
 // deletePods will delete all pods from master running on given node, and return true
 // if any pods were deleted, or were found pending deletion.
 func deletePods(kubeClient clientset.Interface, recorder record.EventRecorder, nodeName, nodeUID string, daemonStore extensionslisters.DaemonSetLister) (bool, error) {
@@ -69,7 +102,7 @@ func deletePods(kubeClient clientset.Interface, recorder record.EventRecorder, n
 		}
 
 		// Set reason and message in the pod object.
-		if _, err = setPodTerminationReason(kubeClient, &pod, nodeName); err != nil {
+		if _, err = setPodTerminationReason(kubeClient, recorder, &pod, nodeName); err != nil {
 			if errors.IsConflict(err) {
 				updateErrList = append(updateErrList,
 					fmt.Errorf("update status failed for pod %q: %v", format.Pod(&pod), err))
@@ -119,7 +152,7 @@ func deletePods(kubeClient clientset.Interface, recorder record.EventRecorder, n
 
 // setPodTerminationReason attempts to set a reason and message in the pod status, updates it in the apiserver,
 // and returns an error if it encounters one.
-func setPodTerminationReason(kubeClient clientset.Interface, pod *v1.Pod, nodeName string) (*v1.Pod, error) {
+func setPodTerminationReason(kubeClient clientset.Interface, recorder record.EventRecorder, pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 	if pod.Status.Reason == nodepkg.NodeUnreachablePodReason {
 		return pod, nil
 	}
@@ -132,6 +165,7 @@ func setPodTerminationReason(kubeClient clientset.Interface, pod *v1.Pod, nodeNa
 	if updatedPod, err = kubeClient.Core().Pods(pod.Namespace).UpdateStatus(pod); err != nil {
 		return nil, err
 	}
+
 	return updatedPod, nil
 }
 

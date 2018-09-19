@@ -53,7 +53,7 @@ func (rm *ReplicationManager) updateReplicationControllerStatus(c v1core.Replica
 	var beReady, beNotReady bool
 	if newStatus.ReadyReplicas == *rc.Spec.Replicas && newStatus.ReadyReplicas > rc.Status.ReadyReplicas {
 		// ReadyReplicas increased to spec.Replicas. RC is ready.
-		glog.V(6).Info("%v beReady!", rc.Name)
+		glog.V(6).Infof("%v beReady!", rc.Name)
 		beReady = true
 	} else if rc.Status.ReadyReplicas == *rc.Spec.Replicas && newStatus.ReadyReplicas < rc.Status.ReadyReplicas {
 		// ReadyReplicas decreased from spec.Replicas. RC is NOT ready.

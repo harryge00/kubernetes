@@ -417,6 +417,7 @@ func (m *manager) syncBatch() {
 	}
 }
 
+// Deprecated: Should be removed in the future. Now events are sent by kube-controller
 func (m *manager) recorderPodEvents(pod *v1.Pod, oldStatus v1.PodStatus, newStatus v1.PodStatus) {
 	if len(pod.OwnerReferences) > 0 && pod.DeletionTimestamp == nil && pod.DeletionGracePeriodSeconds == nil {
 		ref := pod.OwnerReferences[0]
@@ -494,7 +495,7 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 			m.deletePodStatus(uid)
 			return
 		}
-		tmpPodStatus := pod.Status
+		//tmpPodStatus := pod.Status
 		pod.Status = status.status
 		if err := podutil.SetInitContainersStatusesAnnotations(pod); err != nil {
 			glog.Error(err)
@@ -508,8 +509,6 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 				// We don't handle graceful deletion of mirror pods.
 				return
 			}
-
-			m.recorderPodEvents(pod, tmpPodStatus, pod.Status)
 
 			if !m.podDeletionSafety.OkToDeletePod(pod) {
 				glog.V(6).Infof("Pod not ok to delete: %v/%v", pod.Namespace, pod.Name)

@@ -44,6 +44,7 @@ import (
 	corelisters "k8s.io/kubernetes/pkg/client/listers/core/v1"
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/util/metrics"
+	"k8s.io/kubernetes/pkg/util/podchanges"
 )
 
 const (
@@ -326,6 +327,13 @@ func (rm *ReplicationManager) updatePod(old, cur interface{}) {
 			// See https://github.com/kubernetes/kubernetes/issues/39785#issuecomment-279959133 for more info.
 			rm.enqueueControllerAfter(rc, (time.Duration(rc.Spec.MinReadySeconds)*time.Second)+time.Second)
 		}
+		// Send RcPod events for DHC
+		if !v1.IsPodReady(oldPod) && v1.IsPodReady(curPod) {
+			podchanges.RecordPodEvent(rm.recorder, curPod, "RcUpdate", "RcPodReady")
+		} else if v1.IsPodReady(oldPod) && !v1.IsPodReady(curPod) {
+			podchanges.RecordPodEvent(rm.recorder, curPod, "RcUpdate", "RcPodNotReady")
+		}
+
 		return
 	}
 

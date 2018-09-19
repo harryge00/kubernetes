@@ -40,6 +40,7 @@ import (
 	appslisters "k8s.io/kubernetes/pkg/client/listers/apps/v1beta1"
 	corelisters "k8s.io/kubernetes/pkg/client/listers/core/v1"
 	"k8s.io/kubernetes/pkg/controller"
+	"k8s.io/kubernetes/pkg/util/podchanges"
 
 	"github.com/golang/glog"
 )
@@ -56,6 +57,10 @@ var controllerKind = apps.SchemeGroupVersion.WithKind("StatefulSet")
 type StatefulSetController struct {
 	// client interface
 	kubeClient clientset.Interface
+
+	// Recorder for sending pod events
+	recorder record.EventRecorder
+
 	// control returns an interface capable of syncing a stateful set.
 	// Abstracted out for testing.
 	control StatefulSetControlInterface
@@ -89,6 +94,7 @@ func NewStatefulSetController(
 
 	ssc := &StatefulSetController{
 		kubeClient: kubeClient,
+		recorder:   recorder,
 		control: NewDefaultStatefulSetControl(
 			NewRealStatefulPodControl(
 				kubeClient,
@@ -219,6 +225,13 @@ func (ssc *StatefulSetController) updatePod(old, cur interface{}) {
 			return
 		}
 		glog.V(4).Infof("Pod %s updated, objectMeta %+v -> %+v.", curPod.Name, oldPod.ObjectMeta, curPod.ObjectMeta)
+		// Send RcPod events for DHC
+		if !v1.IsPodReady(oldPod) && v1.IsPodReady(curPod) {
+			podchanges.RecordPodEvent(ssc.recorder, curPod, "StatefulSetUpdate", "StatefulSetPodReady")
+		} else if v1.IsPodReady(oldPod) && !v1.IsPodReady(curPod) {
+			podchanges.RecordPodEvent(ssc.recorder, curPod, "StatefulSetUpdate", "StatefulSetPodNotReady")
+		}
+
 		ssc.enqueueStatefulSet(set)
 		return
 	}
