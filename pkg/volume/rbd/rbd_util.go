@@ -292,10 +292,10 @@ func (util *RBDUtil) AttachDisk(b rbdMounter) error {
 				output, err = b.plugin.execCommand("rbd",
 					[]string{"map", b.Image, "--pool", b.Pool, "--id", b.Id, "-m", mon, "-k", b.Keyring})
 			}
+			glog.V(1).Infof("rbd: map result: %v err: %s", string(output), err)
 			if err == nil {
 				break
 			}
-			glog.V(1).Infof("rbd: map error %v %s", err, string(output))
 		}
 		if err != nil {
 			return fmt.Errorf("rbd: map failed %v %s", err, string(output))
@@ -305,7 +305,7 @@ func (util *RBDUtil) AttachDisk(b rbdMounter) error {
 			return errors.New("Could not map image: Timeout after 10s")
 		}
 	}
-
+	glog.V(6).Infof("AttachDisk for rbd image: %v", b.Image)
 	// mount it
 	if err = b.mounter.FormatAndMount(devicePath, globalPDPath, b.fsType, nil); err != nil {
 		err = fmt.Errorf("rbd: failed to mount rbd volume %s [%s] to %s, error %v", devicePath, b.fsType, globalPDPath, err)
