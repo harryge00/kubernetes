@@ -23,9 +23,10 @@ import (
 )
 
 const (
-	ipAnno    = "annotation.ips"
-	maskAnno  = "annotation.mask"
-	macPrefix = "02:42"
+	ipAnno                    = "annotation.ips"
+	maskAnno                  = "annotation.mask"
+	macPrefix                 = "02:42"
+	containerDetaultInterface = "eth0"
 )
 
 type NetType string
@@ -50,10 +51,10 @@ type macvlanNetworkPlugin struct {
 	err               error
 	nonMasqueradeCIDR string
 
-	icmpMessage []byte
-	hostInterfaceName      string
-	mode        string
-	mtu         int
+	icmpMessage   []byte
+	hostInterface netlink.Link
+	mode          netlink.MacvlanMode
+	mtu           int
 }
 
 func NewPlugin(pluginDir string, client dockertools.DockerInterface) network.NetworkPlugin {
@@ -70,16 +71,18 @@ func NewPlugin(pluginDir string, client dockertools.DockerInterface) network.Net
 		dclient:     client,
 	}
 	sort.Strings(files)
+	var mode, hostInterfaceName string
 	for _, confFile := range files {
 		conf, err := libcni.ConfFromFile(confFile)
 		if err != nil {
 			glog.Warningf("Error loading macvlan config file %s: %v", confFile, err)
 			continue
 		}
-		macvlanPlug.mode = conf.Network.Type
-		macvlanPlug.hostInterfaceName = conf.Network.Name
+		mode = conf.Network.Type
+		hostInterfaceName = conf.Network.Name
 		break
 	}
+	// Ping message for flushing ARP records in switchers.
 	pingMessage := icmp.Message{
 		Type: ipv4.ICMPTypeEcho, Code: 0,
 		Body: &icmp.Echo{
@@ -87,9 +90,17 @@ func NewPlugin(pluginDir string, client dockertools.DockerInterface) network.Net
 			Data: []byte("HELLO-R-U-THERE"),
 		},
 	}
-	macvlanPlug.icmpMessage, err = pingMessage.Marshal(nil)
+	macvlanPlug.icmpMessage, _ = pingMessage.Marshal(nil)
+
+	macvlanPlug.mode, err = modeFromString(mode)
 	if err != nil {
-		glog.Error(err)
+		glog.Errorf("Failed to modeFromString: %v", err)
+		return nil
+	}
+	macvlanPlug.hostInterface, err = netlink.LinkByName(hostInterfaceName)
+	if err != nil {
+		glog.Errorf("Failed to lookup hostInterfaceName %q: %v", hostInterfaceName, err)
+		return nil
 	}
 
 	return &macvlanPlug
@@ -101,7 +112,7 @@ func (plugin *macvlanNetworkPlugin) Init(host network.Host, hairpinMode componen
 
 	plugin.nonMasqueradeCIDR = nonMasqueradeCIDR
 	pluginConf := fmt.Sprintf("macvlan mode: %v, hostInterfaceName: %v, mtu: %v, macvlanName: %s, host: %v, netdev: %s, typer: %s, non-masquerade-cidr: %s ",
-		plugin.mode, plugin.hostInterfaceName, plugin.mtu, plugin.macvlanName, plugin.host, plugin.netdev, plugin.typer, plugin.nonMasqueradeCIDR)
+		plugin.mode, plugin.hostInterface.Attrs(), plugin.mtu, plugin.macvlanName, plugin.host, plugin.netdev, plugin.typer, plugin.nonMasqueradeCIDR)
 	glog.Info("Macvlan config: ", pluginConf)
 
 	return nil
@@ -134,7 +145,6 @@ func getNetCardAndType(labels map[string]string) (err error, dev, ip, mask strin
 
 func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID, annotations map[string]string) error {
 	glog.Infof("SetUpPod %v/%v", namespace, name)
-
 	if annotations[network.IPAnnotationKey] == "" || annotations[network.MaskAnnotationKey] == "" {
 		glog.Infof("Not enough annotation of macvlan SetUpPod: %v", annotations)
 		return nil
@@ -179,7 +189,7 @@ func (plugin *macvlanNetworkPlugin) SetUpPod(namespace string, name string, id k
 
 	// If shouldChangeDefaultGateway is true, we use the macvlan iface as the default for routing
 	shouldChangeDefaultGateway := annotations[network.ChangeGateway] == "true"
-	iface, err := plugin.createMacvlan(ips[0], netNamespace, parsedIP, mask, ipv4, routes, shouldChangeDefaultGateway)
+	iface, err := plugin.createMacvlan(ips[0], netNamespace, parsedIP, mask, ipv4, routes, shouldChangeDefaultGateway, containerinfo.NetworkSettings.Gateway)
 	if err != nil {
 		return fmt.Errorf("Macvlan Failed to add ifname to netns %v", err)
 	}
@@ -226,7 +236,6 @@ func (plugin *macvlanNetworkPlugin) TearDownPod(namespace string, name string, i
 	} else {
 		glog.Errorf("Failed to TearDownPod: %v", err)
 	}
-
 
 	return nil
 }
@@ -301,6 +310,7 @@ func modeFromString(s string) (netlink.MacvlanMode, error) {
 	}
 }
 
+// Depracated.
 func generateMacAddr(ipv4 string) (net.HardwareAddr, error) {
 	macAddr := macPrefix //2 bytes prefix with 4 bytes from ipv4
 	ipArrary := strings.Split(ipv4, ".")
@@ -311,6 +321,7 @@ func generateMacAddr(ipv4 string) (net.HardwareAddr, error) {
 			glog.Errorf("failed to translate ipv4 slice into int format %s", err)
 			return nil, err
 		}
+		glog.V(6).Info(v, q)
 		macAddr = macAddr + fmt.Sprintf(":%02x", q)
 	}
 
@@ -322,16 +333,8 @@ func generateMacAddr(ipv4 string) (net.HardwareAddr, error) {
 	return mac, nil
 }
 
-func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns.NetNS, ipv4 net.IP, mask int, ipv4str string, routes []string, shouldChangeDefaultGateway bool) (*current.Interface, error) {
+func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns.NetNS, ipv4 net.IP, mask int, ipv4str string, routes []string, shouldChangeDefaultGateway bool, podGateway string) (*current.Interface, error) {
 	macvlan := &current.Interface{}
-	mode, err := modeFromString(plugin.mode)
-	if err != nil {
-		return nil, err
-	}
-	m, err := netlink.LinkByName(plugin.hostInterfaceName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to lookup hostInterfaceName %q: %v", plugin.hostInterfaceName, err)
-	}
 
 	// We generate a random veth name to avoid name collision (many "eth1" on the same host)
 	randomVethName, err := ip.RandomVethName()
@@ -344,10 +347,10 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 		LinkAttrs: netlink.LinkAttrs{
 			MTU:         plugin.mtu,
 			Name:        randomVethName,
-			ParentIndex: m.Attrs().Index,
+			ParentIndex: plugin.hostInterface.Attrs().Index,
 			Namespace:   netlink.NsFd(int(netNamespace.Fd())),
 		},
-		Mode: mode,
+		Mode: plugin.mode,
 	}
 
 	if err := netlink.LinkAdd(mv); err != nil {
@@ -369,23 +372,20 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 			return err
 		}
 
-		// FIXME(Peiqi): generate MACADDR to fix mac ip pair.
-		MacAddr, err := generateMacAddr(ipv4str)
-		if err == nil {
-			err = netlink.LinkSetHardwareAddr(macvlanIface, MacAddr)
-			if err != nil {
-				glog.Errorf("failed to set macaddress %s", err)
-				return err
-			}
-		} else {
-			glog.Errorf("failed to generate an macaddress for ipv4")
-		}
-
 		// No need to try. Because the whole function will be retried if SetUpPod failed.
 		err = netlink.LinkSetUp(macvlanIface)
 
 		if err != nil {
-			glog.Warningf("failed to set link up %v", err)
+			glog.Warningf("failed to set link %v up: %v", macvlanIface.Attrs(), err)
+			links, getLinkErr := netlink.LinkList()
+			if getLinkErr != nil {
+				glog.Errorf("Cannot list links: %v", getLinkErr)
+			} else {
+				for i := range links {
+					glog.V(6).Info(links[i].Attrs())
+				}
+			}
+
 			delLinkErr := netlink.LinkDel(mv)
 			glog.V(6).Infof("delLinkErr: %v", delLinkErr)
 			return err
@@ -407,9 +407,15 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 		macvlanGateway[3]++
 
 		// For wanghui TEST
+		// TODO: remove this manual code
 		if strings.HasPrefix(ipv4str, "10.35.48.18") {
 			macvlanGateway = net.ParseIP("10.35.51.254")
 			shouldChangeDefaultGateway = true
+		}
+		podGatewayIP := net.ParseIP(podGateway)
+		defaultNetLink, err := netlink.LinkByName(containerDetaultInterface)
+		if err != nil {
+			glog.Warningf("Failed to get containerDetaultInterface %v", err)
 		}
 		if shouldChangeDefaultGateway {
 			err = netlink.RouteReplace(&netlink.Route{
@@ -421,23 +427,42 @@ func (plugin *macvlanNetworkPlugin) createMacvlan(netdev string, netNamespace ns
 				glog.Warningf("Failed to replace default gateway for %v: %v", ipv4, err)
 				return err
 			}
+			_, podCIDRNet, _ := net.ParseCIDR(plugin.nonMasqueradeCIDR)
+
+			err = netlink.RouteAdd(&netlink.Route{
+				LinkIndex: defaultNetLink.Attrs().Index,
+				Scope:     netlink.SCOPE_UNIVERSE,
+				Dst:       podCIDRNet,
+				Gw:        podGatewayIP,
+			})
+			if err != nil {
+				glog.Errorf("Failed to add route for podCIDRNet: %v", err)
+			}
 		}
 
 		// Add routes to different macvlan networks
-		for _, route := range routes {
-			_, otherNet, err := net.ParseCIDR(route)
+		for _, routeStr := range routes {
+			_, otherNet, err := net.ParseCIDR(routeStr)
 			if err != nil {
-				glog.Warningf("Failed to parse route %v for %v", route, ipv4)
+				glog.Warningf("Failed to parse route %v for %v", routeStr, ipv4)
 				continue
 			}
-			err = netlink.RouteAdd(&netlink.Route{
-				LinkIndex: macvlanIface.Attrs().Index,
-				Scope:     netlink.SCOPE_UNIVERSE,
-				Dst:       otherNet,
-				Gw:        macvlanGateway,
-			})
+			route := netlink.Route{
+				Scope: netlink.SCOPE_UNIVERSE,
+				Dst:   otherNet,
+			}
+			// If the default gateway is changed, the routes' gateway should be podCIDR's gateway.
+			// Otherwise, the route is based on Macvlan Interface
+			if shouldChangeDefaultGateway {
+				route.Gw = podGatewayIP
+				route.LinkIndex = defaultNetLink.Attrs().Index
+			} else {
+				route.Gw = macvlanGateway
+				route.LinkIndex = macvlanIface.Attrs().Index
+			}
+			err = netlink.RouteAdd(&route)
 			if err != nil {
-				glog.Warningf("Failed to add route %v for %v: %v", route, ipv4, err)
+				glog.Warningf("Failed to add route %v for %v: %v", routeStr, ipv4, err)
 			}
 		}
 
